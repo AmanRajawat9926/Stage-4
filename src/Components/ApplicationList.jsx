@@ -2,19 +2,25 @@ import ApplicationItem from './ApplicationItem';
 import EditApplicationRow from './EditApplicationRow';
 
 function ApplicationList({
-  totalCount = 0,
-  filteredApplications = [],
+  totalCount,
+  filteredApplications,
+  applications,
   editingId,
   onStartEdit,
   onCancelEdit,
   onSaveEdit,
   onDelete,
+  onStatusChange,
   onClearFilters,
   onAddInterviewRound,
   onRemoveInterviewRound,
 }) {
-  // 1. Fully empty state (no applications in the app)
-  if (totalCount === 0) {
+  // Normalize items to handle both prop variants gracefully
+  const list = filteredApplications || applications || [];
+  const total = totalCount !== undefined ? totalCount : list.length;
+
+  // 1. Fully empty state
+  if (total === 0) {
     return (
       <section
         className="application-list empty-state"
@@ -22,21 +28,17 @@ function ApplicationList({
         aria-live="polite"
       >
         <div className="empty-message-box">
-          <h3 className="empty-title">
-            No applications added yet
-          </h3>
-
+          <h3 className="empty-title">No applications added yet</h3>
           <p className="empty-desc">
-            Your tracker is empty. Use the form above to add
-            your first job application and track your status.
+            Your tracker is empty. Add a new application or import openings directly from the Job Board!
           </p>
         </div>
       </section>
     );
   }
 
-  // 2. Filtered empty state (applications exist, but search/filter returned no results)
-  if (filteredApplications.length === 0) {
+  // 2. Filtered empty state (items exist in tracker, but current filter returned none)
+  if (list.length === 0) {
     return (
       <section
         className="application-list empty-state"
@@ -44,42 +46,33 @@ function ApplicationList({
         aria-live="polite"
       >
         <div className="empty-message-box filter-empty">
-          <h3 className="empty-title">
-            No matching applications
-          </h3>
-
+          <h3 className="empty-title">No matching applications</h3>
           <p className="empty-desc">
-            No applications match your active search and round filters.
+            No applications match your active search or status filters.
           </p>
-
-          <button
-            type="button"
-            className="clear-filter-btn"
-            onClick={onClearFilters}
-          >
-            Reset Filters
-          </button>
+          {onClearFilters && (
+            <button
+              type="button"
+              className="clear-filter-btn"
+              onClick={onClearFilters}
+            >
+              Reset Filters
+            </button>
+          )}
         </div>
       </section>
     );
   }
 
-  const count = filteredApplications.length;
-
-  // 3. Render list of applications
+  // 3. Render application items
   return (
-    <section
-      className="application-list"
-      aria-label="Applications list"
-    >
+    <section className="application-list" aria-label="Applications list">
       <div className="list-header">
-        <h2 aria-live="polite">
-          Applications ({count})
-        </h2>
+        <h2 aria-live="polite">Applications ({list.length})</h2>
       </div>
 
       <ul className="application-items" role="list">
-        {filteredApplications.map((application) => {
+        {list.map((application) => {
           const isEditing = editingId === application.id;
 
           return (
@@ -95,6 +88,7 @@ function ApplicationList({
                   application={application}
                   onEdit={onStartEdit}
                   onDelete={onDelete}
+                  onStatusChange={onStatusChange}
                   onAddInterviewRound={onAddInterviewRound}
                   onRemoveInterviewRound={onRemoveInterviewRound}
                 />

@@ -1,4 +1,5 @@
 export const ROUNDS = [
+  'Saved',
   'Applied',
   'Screen',
   'Interview',
@@ -31,6 +32,27 @@ const generateUUID = () => {
 };
 
 /* --------------------------------------------------
+   URL Helpers
+-------------------------------------------------- */
+
+export const formatUrl = (value) => {
+  const trimmedValue = String(value ?? '').trim();
+
+  if (!trimmedValue) {
+    return '';
+  }
+
+  if (
+    trimmedValue.startsWith('http://') ||
+    trimmedValue.startsWith('https://')
+  ) {
+    return trimmedValue;
+  }
+
+  return `https://${trimmedValue}`;
+};
+
+/* --------------------------------------------------
    Date Helpers
 -------------------------------------------------- */
 
@@ -54,13 +76,8 @@ export const getTodayString = () => {
    Validation
 -------------------------------------------------- */
 
-export const validateField = (
-  name,
-  value
-) => {
-  const trimmedValue = String(
-    value ?? ''
-  ).trim();
+export const validateField = (name, value) => {
+  const trimmedValue = String(value ?? '').trim();
 
   if (name === 'company') {
     return !trimmedValue
@@ -79,10 +96,7 @@ export const validateField = (
       return 'Applied date is required.';
     }
 
-    if (
-      trimmedValue >
-      getTodayString()
-    ) {
+    if (trimmedValue > getTodayString()) {
       return 'Applied date cannot be in the future.';
     }
 
@@ -95,16 +109,11 @@ export const validateField = (
     }
 
     try {
-      const formattedUrl =
-        formatUrl(trimmedValue);
+      const formattedUrl = formatUrl(trimmedValue);
+      const parsedUrl = new URL(formattedUrl);
 
-      const parsedUrl =
-        new URL(formattedUrl);
-
-      return (
-        parsedUrl.protocol === 'http:' ||
+      return parsedUrl.protocol === 'http:' ||
         parsedUrl.protocol === 'https:'
-      )
         ? ''
         : 'Please enter a valid HTTP or HTTPS URL.';
     } catch {
@@ -115,9 +124,7 @@ export const validateField = (
   return '';
 };
 
-export const validateApplication = (
-  formData
-) => {
+export const validateApplication = (formData) => {
   const errors = {};
 
   const fields = [
@@ -145,15 +152,7 @@ export const validateApplication = (
    Transition History
 -------------------------------------------------- */
 
-/*
- * Returns a COPY of history sorted newest first.
- *
- * This helper is for display purposes.
- * It never mutates the original stored history.
- */
-export const getSortedHistory = (
-  application
-) => {
+export const getSortedHistory = (application) => {
   if (
     !application ||
     !Array.isArray(application.history)
@@ -161,47 +160,42 @@ export const getSortedHistory = (
     return [];
   }
 
-  return [...application.history].sort(
-    (a, b) => {
-      const timeA =
-        new Date(
-          a.changedAt
-        ).getTime();
+  return [...application.history].sort((a, b) => {
+    const timeA = new Date(
+      a.changedAt
+    ).getTime();
 
-      const timeB =
-        new Date(
-          b.changedAt
-        ).getTime();
+    const timeB = new Date(
+      b.changedAt
+    ).getTime();
 
-      if (timeB !== timeA) {
-        return timeB - timeA;
-      }
-
-      return String(
-        b.id || ''
-      ).localeCompare(
-        String(a.id || '')
-      );
+    if (timeB !== timeA) {
+      return timeB - timeA;
     }
-  );
+
+    return String(b.id || '').localeCompare(
+      String(a.id || '')
+    );
+  });
 };
 
-/*
- * Current round is derived ONLY from the
- * latest stored transition.
+/**
+ * Current round is derived from the last history entry.
  *
- * History is stored oldest -> newest.
- * Therefore the last item is the current state.
+ * History is the source of truth instead of storing
+ * a separate current round field.
  */
-export const getDerivedRound = (
-  application
-) => {
+export const getDerivedRound = (application) => {
   if (
     !application ||
     !Array.isArray(application.history) ||
     application.history.length === 0
   ) {
-    return 'Applied';
+    return (
+      application?.status ||
+      application?.round ||
+      'Applied'
+    );
   }
 
   const lastTransition =
@@ -216,55 +210,35 @@ export const getDerivedRound = (
    Migration
 -------------------------------------------------- */
 
-/*
- * Converts old Stage 1 applications into the
- * Stage 3 history-based shape.
- *
- * Legacy:
- * {
- *   round: 'Screen'
- * }
- *
- * becomes:
- * {
- *   history: [
- *     {
- *       from: null,
- *       to: 'Screen',
- *       changedAt: ...
- *     }
- *   ]
- * }
- *
- * Existing Stage 3 history is preserved.
- */
-export const migrateApplications = (
-  apps
-) => {
+export const migrateApplications = (apps) => {
   if (!Array.isArray(apps)) {
     return [];
   }
 
   return apps.map((app) => {
+    /*
+     * Support old Stage 1 data.
+     */
     const legacyRound =
       app.round ||
       app.stage ||
+      app.status ||
       'Applied';
 
     /*
-     * Remove the old duplicated round/stage
-     * fields from the new application shape.
+     * Remove old source-of-truth fields.
+     * Current round comes from history.
      */
     const {
       round,
       stage,
+      status,
       ...cleanApp
     } = app;
 
     /*
-     * Already migrated application.
-     *
-     * Preserve its history exactly.
+     * Already migrated applications keep their
+     * existing transition history.
      */
     if (
       Array.isArray(app.history) &&
@@ -272,23 +246,18 @@ export const migrateApplications = (
     ) {
       return {
         ...cleanApp,
-        history: [
-          ...app.history,
-        ],
+
+        history: [...app.history],
+
         interviewRounds:
-          Array.isArray(
-            app.interviewRounds
-          )
-            ? [
-                ...app.interviewRounds,
-              ]
+          Array.isArray(app.interviewRounds)
+            ? [...app.interviewRounds]
             : [],
       };
     }
 
     /*
-     * Stage 1 application:
-     * seed exactly one transition.
+     * Create exactly one transition for old records.
      */
     const migrationTimestamp =
       app.createdAt
@@ -303,22 +272,17 @@ export const migrateApplications = (
       }`,
       from: null,
       to: legacyRound,
-      changedAt:
-        migrationTimestamp,
+      changedAt: migrationTimestamp,
     };
 
     return {
       ...cleanApp,
-      history: [
-        initialTransition,
-      ],
+
+      history: [initialTransition],
+
       interviewRounds:
-        Array.isArray(
-          app.interviewRounds
-        )
-          ? [
-              ...app.interviewRounds,
-            ]
+        Array.isArray(app.interviewRounds)
+          ? [...app.interviewRounds]
           : [],
     };
   });
@@ -335,13 +299,8 @@ export const calculateDaysSinceApplied = (
     return 0;
   }
 
-  const [
-    year,
-    month,
-    day,
-  ] = appliedDate
-    .split('-')
-    .map(Number);
+  const [year, month, day] =
+    appliedDate.split('-').map(Number);
 
   if (!year || !month || !day) {
     return 0;
@@ -353,14 +312,11 @@ export const calculateDaysSinceApplied = (
     day
   );
 
-  const todayStr =
-    getTodayString();
-
   const [
     todayYear,
     todayMonth,
     todayDay,
-  ] = todayStr
+  ] = getTodayString()
     .split('-')
     .map(Number);
 
@@ -392,10 +348,6 @@ export const isApplicationStale = (
   const currentRound =
     getDerivedRound(application);
 
-  /*
-   * Only Applied and Screen applications
-   * can be stale.
-   */
   if (
     currentRound !== 'Applied' &&
     currentRound !== 'Screen'
@@ -429,27 +381,14 @@ export const countStaleApplications = (
 export const isUpcomingInterview = (
   interviewRound
 ) => {
-  if (
-    !interviewRound?.date
-  ) {
+  if (!interviewRound?.date) {
     return false;
   }
 
-  const today = new Date();
-
-  const todayUtc = Date.UTC(
-    today.getFullYear(),
-    today.getMonth(),
-    today.getDate()
-  );
-
-  const [
-    year,
-    month,
-    day,
-  ] = interviewRound.date
-    .split('-')
-    .map(Number);
+  const [year, month, day] =
+    interviewRound.date
+      .split('-')
+      .map(Number);
 
   if (!year || !month || !day) {
     return false;
@@ -459,6 +398,20 @@ export const isUpcomingInterview = (
     year,
     month - 1,
     day
+  );
+
+  const [
+    todayYear,
+    todayMonth,
+    todayDay,
+  ] = getTodayString()
+    .split('-')
+    .map(Number);
+
+  const todayUtc = Date.UTC(
+    todayYear,
+    todayMonth - 1,
+    todayDay
   );
 
   const sevenDaysLater =
@@ -499,35 +452,6 @@ export const countUpcomingInterviews = (
 };
 
 /* --------------------------------------------------
-   URL Helpers
--------------------------------------------------- */
-
-export const formatUrl = (
-  value
-) => {
-  const trimmedValue = String(
-    value ?? ''
-  ).trim();
-
-  if (!trimmedValue) {
-    return '';
-  }
-
-  if (
-    trimmedValue.startsWith(
-      'http://'
-    ) ||
-    trimmedValue.startsWith(
-      'https://'
-    )
-  ) {
-    return trimmedValue;
-  }
-
-  return `https://${trimmedValue}`;
-};
-
-/* --------------------------------------------------
    Display Helpers
 -------------------------------------------------- */
 
@@ -539,9 +463,7 @@ export const formatRelativeTime = (
   }
 
   const timestamp =
-    new Date(
-      dateString
-    ).getTime();
+    new Date(dateString).getTime();
 
   if (Number.isNaN(timestamp)) {
     return '';
@@ -596,14 +518,9 @@ export const formatExactDate = (
     return '';
   }
 
-  const date =
-    new Date(dateString);
+  const date = new Date(dateString);
 
-  if (
-    Number.isNaN(
-      date.getTime()
-    )
-  ) {
+  if (Number.isNaN(date.getTime())) {
     return '';
   }
 
@@ -616,6 +533,21 @@ export const formatExactDate = (
     }
   );
 };
+
+export function formatDate(dateString) {
+  return formatExactDate(dateString);
+}
+
+export function sanitizeInput(str) {
+  if (!str) {
+    return '';
+  }
+
+  return String(str).replace(
+    /[<>]/g,
+    ''
+  );
+}
 
 /* --------------------------------------------------
    Transition Factory

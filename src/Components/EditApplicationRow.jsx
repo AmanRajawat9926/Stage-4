@@ -1,5 +1,4 @@
 import { useState } from 'react';
-
 import {
   ROUNDS,
   getTodayString,
@@ -8,18 +7,14 @@ import {
   getDerivedRound,
 } from '../Utils/helpers';
 
-function EditApplicationRow({
-  application,
-  onSave,
-  onCancel,
-}) {
-  const currentRound = getDerivedRound(application);
+function EditApplicationRow({ application, onSave, onCancel }) {
+  const currentRound = application.status || getDerivedRound(application);
 
   const [formData, setFormData] = useState({
     company: application.company || '',
     role: application.role || '',
-    round: currentRound,
-    appliedDate: application.appliedDate || '',
+    round: currentRound || 'Applied',
+    appliedDate: application.appliedDate || getTodayString(),
     jobLink: application.jobLink || '',
   });
 
@@ -33,22 +28,22 @@ function EditApplicationRow({
       [name]: value,
     }));
 
-    const fieldError = validateField(name, value);
-
-    setErrors((prev) => ({
-      ...prev,
-      [name]: fieldError,
-    }));
+    if (validateField) {
+      const fieldError = validateField(name, value);
+      setErrors((prev) => ({
+        ...prev,
+        [name]: fieldError,
+      }));
+    }
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-
-    const validationErrors = validateApplication(formData);
-
-    if (Object.keys(validationErrors).length > 0) {
-      setErrors(validationErrors);
-      return;
+  const handleSave = () => {
+    if (validateApplication) {
+      const validationErrors = validateApplication(formData);
+      if (Object.keys(validationErrors).length > 0) {
+        setErrors(validationErrors);
+        return;
+      }
     }
 
     const updatedHistory = Array.isArray(application.history)
@@ -79,6 +74,7 @@ function EditApplicationRow({
       ...cleanApp,
       company: formData.company.trim(),
       role: formData.role.trim(),
+      status: formData.round,
       history: updatedHistory,
       appliedDate: formData.appliedDate,
       jobLink: formData.jobLink.trim(),
@@ -87,12 +83,26 @@ function EditApplicationRow({
     onSave(updatedApplication, newTransition);
   };
 
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    handleSave();
+  };
+
   const handleKeyDown = (e) => {
     if (e.key === 'Escape') {
       e.preventDefault();
       onCancel();
     }
   };
+
+  const availableRounds = ROUNDS || [
+    'Saved',
+    'Applied',
+    'Screening',
+    'Interview',
+    'Offer',
+    'Rejected',
+  ];
 
   return (
     <form
@@ -105,10 +115,7 @@ function EditApplicationRow({
       <div className="edit-grid">
         {/* Company */}
         <div className={`form-field ${errors.company ? 'has-error' : ''}`}>
-          <label htmlFor={`edit-company-${application.id}`}>
-            Company *
-          </label>
-
+          <label htmlFor={`edit-company-${application.id}`}>Company *</label>
           <input
             id={`edit-company-${application.id}`}
             name="company"
@@ -122,7 +129,6 @@ function EditApplicationRow({
               errors.company ? `edit-company-error-${application.id}` : undefined
             }
           />
-
           {errors.company && (
             <p
               id={`edit-company-error-${application.id}`}
@@ -136,10 +142,7 @@ function EditApplicationRow({
 
         {/* Role */}
         <div className={`form-field ${errors.role ? 'has-error' : ''}`}>
-          <label htmlFor={`edit-role-${application.id}`}>
-            Role *
-          </label>
-
+          <label htmlFor={`edit-role-${application.id}`}>Role *</label>
           <input
             id={`edit-role-${application.id}`}
             name="role"
@@ -152,7 +155,6 @@ function EditApplicationRow({
               errors.role ? `edit-role-error-${application.id}` : undefined
             }
           />
-
           {errors.role && (
             <p
               id={`edit-role-error-${application.id}`}
@@ -164,21 +166,18 @@ function EditApplicationRow({
           )}
         </div>
 
-        {/* Round */}
+        {/* Round / Status */}
         <div className="form-field">
-          <label htmlFor={`edit-round-${application.id}`}>
-            Round
-          </label>
-
+          <label htmlFor={`edit-round-${application.id}`}>Status / Round</label>
           <select
             id={`edit-round-${application.id}`}
             name="round"
             value={formData.round}
             onChange={handleChange}
           >
-            {ROUNDS.map((round) => (
-              <option key={round} value={round}>
-                {round}
+            {availableRounds.map((roundItem) => (
+              <option key={roundItem} value={roundItem}>
+                {roundItem}
               </option>
             ))}
           </select>
@@ -186,15 +185,12 @@ function EditApplicationRow({
 
         {/* Applied Date */}
         <div className={`form-field ${errors.appliedDate ? 'has-error' : ''}`}>
-          <label htmlFor={`edit-appliedDate-${application.id}`}>
-            Applied Date *
-          </label>
-
+          <label htmlFor={`edit-appliedDate-${application.id}`}>Applied Date *</label>
           <input
             id={`edit-appliedDate-${application.id}`}
             type="date"
             name="appliedDate"
-            max={getTodayString()}
+            max={getTodayString ? getTodayString() : undefined}
             value={formData.appliedDate}
             onChange={handleChange}
             className={errors.appliedDate ? 'input-error' : ''}
@@ -205,7 +201,6 @@ function EditApplicationRow({
                 : undefined
             }
           />
-
           {errors.appliedDate && (
             <p
               id={`edit-appliedDate-error-${application.id}`}
@@ -219,23 +214,20 @@ function EditApplicationRow({
 
         {/* Job Link */}
         <div className={`form-field full-width ${errors.jobLink ? 'has-error' : ''}`}>
-          <label htmlFor={`edit-jobLink-${application.id}`}>
-            Job Link *
-          </label>
-
+          <label htmlFor={`edit-jobLink-${application.id}`}>Job Link</label>
           <input
             id={`edit-jobLink-${application.id}`}
             type="text"
             name="jobLink"
             value={formData.jobLink}
             onChange={handleChange}
+            placeholder="https://..."
             className={errors.jobLink ? 'input-error' : ''}
             aria-invalid={Boolean(errors.jobLink)}
             aria-describedby={
               errors.jobLink ? `edit-jobLink-error-${application.id}` : undefined
             }
           />
-
           {errors.jobLink && (
             <p
               id={`edit-jobLink-error-${application.id}`}

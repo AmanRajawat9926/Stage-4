@@ -1,5 +1,4 @@
 import { useState, useMemo } from 'react';
-
 import {
   calculateDaysSinceApplied,
   isApplicationStale,
@@ -10,7 +9,7 @@ import {
 } from '../Utils/helpers';
 
 const INITIAL_INTERVIEW_FORM = {
-  type: 'phone',
+  type: 'Phone Screen',
   date: getTodayString(),
   note: '',
 };
@@ -19,15 +18,18 @@ function ApplicationItem({
   application,
   onEdit,
   onDelete,
+  onStatusChange,
   onAddInterviewRound,
   onRemoveInterviewRound,
 }) {
-  const currentRound = getDerivedRound(application);
+  const currentRound = application.status || getDerivedRound(application);
   const badgeClass = `badge-${currentRound.toLowerCase().replace(/\s+/g, '-')}`;
 
-  const daysSince = calculateDaysSinceApplied(application.appliedDate);
-  const isStale = isApplicationStale(application);
-  const hrefUrl = formatUrl(application.jobLink);
+  const daysSince = application.appliedDate
+    ? calculateDaysSinceApplied(application.appliedDate)
+    : null;
+  const isStale = isApplicationStale ? isApplicationStale(application) : false;
+  const hrefUrl = application.jobLink ? formatUrl(application.jobLink) : null;
 
   const sortedHistory = useMemo(() => {
     return Array.isArray(application.history)
@@ -80,7 +82,7 @@ function ApplicationItem({
   };
 
   const handleInterviewSubmit = (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
 
     const errors = validateInterviewRound();
     if (Object.keys(errors).length > 0) {
@@ -88,12 +90,14 @@ function ApplicationItem({
       return;
     }
 
-    onAddInterviewRound(application.id, {
-      id: crypto.randomUUID(),
-      type: interviewForm.type,
-      date: interviewForm.date,
-      note: interviewForm.note.trim(),
-    });
+    if (onAddInterviewRound) {
+      onAddInterviewRound(application.id, {
+        id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
+        type: interviewForm.type,
+        date: interviewForm.date,
+        note: interviewForm.note.trim(),
+      });
+    }
 
     resetInterviewForm();
   };
@@ -105,29 +109,40 @@ function ApplicationItem({
     }
   };
 
-  const handleRemoveInterviewRound = (roundId) => {
-    onRemoveInterviewRound(application.id, roundId);
-  };
-
   return (
     <article
-      className={`application-item ${isStale ? 'is-stale' : ''}`}
+      className={`application-item card ${isStale ? 'is-stale' : ''}`}
       data-testid="application-row"
     >
       <div className="application-details">
         <div className="title-row">
           <h3 className="company-title">{application.company}</h3>
 
-          <span className={`round-badge ${badgeClass}`}>
-            {currentRound}
-          </span>
+          {onStatusChange ? (
+            <select
+              value={currentRound}
+              onChange={(e) => onStatusChange(application.id, e.target.value)}
+              className={`status-select ${badgeClass}`}
+            >
+              <option value="Saved">Saved</option>
+              <option value="Applied">Applied</option>
+              <option value="Screening">Screening</option>
+              <option value="Interview">Interview</option>
+              <option value="Offer">Offer</option>
+              <option value="Rejected">Rejected</option>
+            </select>
+          ) : (
+            <span className={`round-badge ${badgeClass}`}>
+              {currentRound}
+            </span>
+          )}
 
           {isStale && (
             <span
               className="stale-badge"
               title="Application has been in Applied/Screen for more than 14 days"
             >
-              ⚠ Stale (&gt;14d)
+              ⚠️ Stale (&gt;14d)
             </span>
           )}
         </div>
@@ -136,206 +151,179 @@ function ApplicationItem({
 
         <div className="meta-row">
           <span className="meta-applied">
-            <strong>Applied:</strong> {application.appliedDate}
+            <strong>Applied:</strong> {application.appliedDate || 'N/A'}
           </span>
 
-          <span className="days-ago">
-            ({daysSince} {daysSince === 1 ? 'day' : 'days'} ago)
-          </span>
+          {daysSince !== null && (
+            <span className="days-ago">
+              ({daysSince} {daysSince === 1 ? 'day' : 'days'} ago)
+            </span>
+          )}
 
-          <span className="meta-separator">•</span>
-
-          <a
-            href={hrefUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="job-link"
-            title="Open job link in new tab"
-          >
-            Job Link ↗
-          </a>
+          {hrefUrl && (
+            <>
+              <span className="meta-separator">•</span>
+              <a
+                href={hrefUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="job-link"
+                title="Open job link in new tab"
+              >
+                Job Link ↗
+              </a>
+            </>
+          )}
         </div>
 
         {/* Interview Rounds */}
-        <section
-          className="application-detail-section"
-          aria-label="Interview rounds"
-        >
-          <div className="detail-section-header">
-            <h4>Interview Rounds ({interviewRounds.length})</h4>
+        {onAddInterviewRound && (
+          <section
+            className="application-detail-section"
+            aria-label="Interview rounds"
+          >
+            <div className="detail-section-header">
+              <h4>Interview Rounds ({interviewRounds.length})</h4>
 
-            <button
-              type="button"
-              className="add-round-button"
-              onClick={() => {
-                if (showInterviewForm) {
-                  resetInterviewForm();
-                } else {
-                  setShowInterviewForm(true);
-                }
-              }}
-            >
-              {showInterviewForm ? 'Cancel' : '+ Add Interview Round'}
-            </button>
-          </div>
-
-          {showInterviewForm && (
-            <form
-              className="interview-round-form"
-              onSubmit={handleInterviewSubmit}
-              onKeyDown={handleInterviewKeyDown}
-              noValidate
-              aria-label={`Add interview round for ${application.company}`}
-            >
-              <div
-                className={`form-field ${
-                  interviewErrors.type ? 'has-error' : ''
-                }`}
-              >
-                <label htmlFor={`round-type-${application.id}`}>
-                  Type *
-                </label>
-
-                <select
-                  id={`round-type-${application.id}`}
-                  name="type"
-                  value={interviewForm.type}
-                  onChange={handleInterviewChange}
-                  className={interviewErrors.type ? 'input-error' : ''}
-                  aria-invalid={Boolean(interviewErrors.type)}
-                  aria-describedby={
-                    interviewErrors.type
-                      ? `round-type-error-${application.id}`
-                      : undefined
+              <button
+                type="button"
+                className="add-round-button"
+                onClick={() => {
+                  if (showInterviewForm) {
+                    resetInterviewForm();
+                  } else {
+                    setShowInterviewForm(true);
                   }
-                >
-                  {INTERVIEW_ROUND_TYPES.map((type) => (
-                    <option key={type} value={type}>
-                      {type}
-                    </option>
-                  ))}
-                </select>
-
-                {interviewErrors.type && (
-                  <p
-                    id={`round-type-error-${application.id}`}
-                    className="error-message"
-                    role="alert"
-                  >
-                    {interviewErrors.type}
-                  </p>
-                )}
-              </div>
-
-              <div
-                className={`form-field ${
-                  interviewErrors.date ? 'has-error' : ''
-                }`}
+                }}
               >
-                <label htmlFor={`round-date-${application.id}`}>
-                  Date *
-                </label>
+                {showInterviewForm ? 'Cancel' : '+ Add Interview Round'}
+              </button>
+            </div>
 
-                <input
-                  id={`round-date-${application.id}`}
-                  name="date"
-                  type="date"
-                  value={interviewForm.date}
-                  onChange={handleInterviewChange}
-                  className={interviewErrors.date ? 'input-error' : ''}
-                  aria-invalid={Boolean(interviewErrors.date)}
-                  aria-describedby={
-                    interviewErrors.date
-                      ? `round-date-error-${application.id}`
-                      : undefined
-                  }
-                />
+            {showInterviewForm && (
+              <form
+                className="interview-round-form"
+                onSubmit={handleInterviewSubmit}
+                onKeyDown={handleInterviewKeyDown}
+                noValidate
+                aria-label={`Add interview round for ${application.company}`}
+              >
+                <div
+                  className={`form-field ${
+                    interviewErrors.type ? 'has-error' : ''
+                  }`}
+                >
+                  <label htmlFor={`round-type-${application.id}`}>
+                    Type *
+                  </label>
 
-                {interviewErrors.date && (
-                  <p
-                    id={`round-date-error-${application.id}`}
-                    className="error-message"
-                    role="alert"
+                  <select
+                    id={`round-type-${application.id}`}
+                    name="type"
+                    value={interviewForm.type}
+                    onChange={handleInterviewChange}
+                    className={interviewErrors.type ? 'input-error' : ''}
+                    aria-invalid={Boolean(interviewErrors.type)}
                   >
-                    {interviewErrors.date}
-                  </p>
-                )}
-              </div>
+                    {(INTERVIEW_ROUND_TYPES || [
+                      'Phone Screen',
+                      'Technical',
+                      'Behavioral',
+                      'System Design',
+                      'HR / Culture Fit',
+                    ]).map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-              <div className="form-field full-width">
-                <label htmlFor={`round-note-${application.id}`}>
-                  Note
-                </label>
-
-                <input
-                  id={`round-note-${application.id}`}
-                  name="note"
-                  type="text"
-                  value={interviewForm.note}
-                  onChange={handleInterviewChange}
-                  placeholder="e.g. DSA + JavaScript discussion"
-                />
-              </div>
-
-              <div className="form-actions">
-                <button type="submit" className="primary-button">
-                  Add Round
-                </button>
-
-                <button
-                  type="button"
-                  className="cancel-button"
-                  onClick={resetInterviewForm}
+                <div
+                  className={`form-field ${
+                    interviewErrors.date ? 'has-error' : ''
+                  }`}
                 >
-                  Cancel (Esc)
-                </button>
-              </div>
-            </form>
-          )}
+                  <label htmlFor={`round-date-${application.id}`}>
+                    Date *
+                  </label>
 
-          {interviewRounds.length === 0 ? (
-            <p className="detail-empty">
-              No interview rounds scheduled.
-            </p>
-          ) : (
-            <ul className="interview-round-list">
-              {interviewRounds.map((round) => (
-                <li
-                  key={round.id}
-                  className="interview-round-summary"
-                >
-                  <div className="interview-round-info">
-                    <strong>{round.type}</strong>
-                    <span>{round.date}</span>
-                    {round.note && <span>— {round.note}</span>}
-                  </div>
+                  <input
+                    id={`round-date-${application.id}`}
+                    name="date"
+                    type="date"
+                    value={interviewForm.date}
+                    onChange={handleInterviewChange}
+                    className={interviewErrors.date ? 'input-error' : ''}
+                  />
+                </div>
+
+                <div className="form-field full-width">
+                  <label htmlFor={`round-note-${application.id}`}>Note</label>
+
+                  <input
+                    id={`round-note-${application.id}`}
+                    name="note"
+                    type="text"
+                    value={interviewForm.note}
+                    onChange={handleInterviewChange}
+                    placeholder="e.g. DSA + JavaScript discussion"
+                  />
+                </div>
+
+                <div className="form-actions">
+                  <button type="submit" className="primary-button">
+                    Add Round (Enter)
+                  </button>
 
                   <button
                     type="button"
-                    className="delete-round-button"
-                    onClick={() => handleRemoveInterviewRound(round.id)}
-                    aria-label={`Remove ${round.type} interview round on ${round.date}`}
+                    className="cancel-button"
+                    onClick={resetInterviewForm}
                   >
-                    Remove
+                    Cancel (Esc)
                   </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+                </div>
+              </form>
+            )}
+
+            {interviewRounds.length === 0 ? (
+              <p className="detail-empty">No interview rounds scheduled.</p>
+            ) : (
+              <ul className="interview-round-list">
+                {interviewRounds.map((round) => (
+                  <li key={round.id} className="interview-round-summary">
+                    <div className="interview-round-info">
+                      <strong>{round.type}</strong>
+                      <span>{round.date}</span>
+                      {round.note && <span>— {round.note}</span>}
+                    </div>
+
+                    {onRemoveInterviewRound && (
+                      <button
+                        type="button"
+                        className="delete-round-button"
+                        onClick={() =>
+                          onRemoveInterviewRound(application.id, round.id)
+                        }
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
 
         {/* Transition History */}
-        <section
-          className="history-section"
-          aria-label="Transition history"
-        >
-          <h4>Transition History ({sortedHistory.length})</h4>
-
-          {sortedHistory.length === 0 ? (
-            <p className="detail-empty">
-              No transition history available.
-            </p>
-          ) : (
+        {sortedHistory.length > 0 && (
+          <section
+            className="history-section"
+            aria-label="Transition history"
+          >
+            <h4>Transition History ({sortedHistory.length})</h4>
             <ul className="history-list">
               {sortedHistory.map((item) => (
                 <li key={item.id} className="history-item">
@@ -355,28 +343,32 @@ function ApplicationItem({
                 </li>
               ))}
             </ul>
-          )}
-        </section>
+          </section>
+        )}
       </div>
 
       <div className="item-actions">
-        <button
-          type="button"
-          className="edit-button"
-          onClick={() => onEdit(application.id)}
-          aria-label={`Edit application for ${application.company}`}
-        >
-          Edit
-        </button>
+        {onEdit && (
+          <button
+            type="button"
+            className="edit-button"
+            onClick={() => onEdit(application.id)}
+            aria-label={`Edit application for ${application.company}`}
+          >
+            Edit
+          </button>
+        )}
 
-        <button
-          type="button"
-          className="delete-button"
-          onClick={() => onDelete(application.id)}
-          aria-label={`Delete application for ${application.company}`}
-        >
-          Delete
-        </button>
+        {onDelete && (
+          <button
+            type="button"
+            className="delete-button"
+            onClick={() => onDelete(application.id)}
+            aria-label={`Delete application for ${application.company}`}
+          >
+            Delete
+          </button>
+        )}
       </div>
     </article>
   );

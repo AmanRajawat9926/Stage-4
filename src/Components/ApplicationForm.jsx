@@ -1,5 +1,4 @@
 import { useState } from 'react';
-
 import {
   ROUNDS,
   getTodayString,
@@ -15,7 +14,7 @@ const getInitialForm = () => ({
   jobLink: '',
 });
 
-function ApplicationForm({ onAddApplication }) {
+function ApplicationForm({ onAddApplication, onCancel }) {
   const [formData, setFormData] = useState(getInitialForm);
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
@@ -30,7 +29,6 @@ function ApplicationForm({ onAddApplication }) {
 
     if (touched[name] || errors[name]) {
       const errorMsg = validateField(name, value);
-
       setErrors((prev) => ({
         ...prev,
         [name]: errorMsg,
@@ -47,7 +45,6 @@ function ApplicationForm({ onAddApplication }) {
     }));
 
     const errorMsg = validateField(name, value);
-
     setErrors((prev) => ({
       ...prev,
       [name]: errorMsg,
@@ -58,9 +55,10 @@ function ApplicationForm({ onAddApplication }) {
     setFormData(getInitialForm());
     setErrors({});
     setTouched({});
+    if (onCancel) onCancel();
   };
 
-  // Escape key resets the form.
+  // Keyboard shortcut constraint: Enter to submit, Escape to cancel/reset
   const handleKeyDown = (e) => {
     if (e.key === 'Escape') {
       e.preventDefault();
@@ -69,7 +67,7 @@ function ApplicationForm({ onAddApplication }) {
   };
 
   const handleSubmit = (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
 
     setTouched({
       company: true,
@@ -88,19 +86,19 @@ function ApplicationForm({ onAddApplication }) {
     const timestamp = new Date().toISOString();
 
     onAddApplication({
-      id: crypto.randomUUID(),
+      id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
       company: formData.company.trim(),
       role: formData.role.trim(),
-
+      round: formData.round,
+      status: formData.round,
       history: [
         {
-          id: crypto.randomUUID(),
+          id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
           from: null,
           to: formData.round,
           changedAt: timestamp,
         },
       ],
-
       interviewRounds: [],
       appliedDate: formData.appliedDate,
       jobLink: formData.jobLink.trim(),
@@ -125,7 +123,6 @@ function ApplicationForm({ onAddApplication }) {
       <div className="form-row">
         <div className={`form-field ${errors.company ? 'has-error' : ''}`}>
           <label htmlFor="company">Company *</label>
-
           <input
             id="company"
             name="company"
@@ -136,11 +133,9 @@ function ApplicationForm({ onAddApplication }) {
             placeholder="e.g. Stripe"
             className={errors.company ? 'input-error' : ''}
             aria-invalid={Boolean(errors.company)}
-            aria-describedby={
-              errors.company ? 'company-error' : undefined
-            }
+            aria-describedby={errors.company ? 'company-error' : undefined}
+            autoFocus
           />
-
           {errors.company && (
             <p id="company-error" className="error-message" role="alert">
               {errors.company}
@@ -150,7 +145,6 @@ function ApplicationForm({ onAddApplication }) {
 
         <div className={`form-field ${errors.role ? 'has-error' : ''}`}>
           <label htmlFor="role">Role *</label>
-
           <input
             id="role"
             name="role"
@@ -163,7 +157,6 @@ function ApplicationForm({ onAddApplication }) {
             aria-invalid={Boolean(errors.role)}
             aria-describedby={errors.role ? 'role-error' : undefined}
           />
-
           {errors.role && (
             <p id="role-error" className="error-message" role="alert">
               {errors.role}
@@ -175,7 +168,6 @@ function ApplicationForm({ onAddApplication }) {
       <div className="form-row">
         <div className="form-field">
           <label htmlFor="round">Initial Round</label>
-
           <select
             id="round"
             name="round"
@@ -190,11 +182,8 @@ function ApplicationForm({ onAddApplication }) {
           </select>
         </div>
 
-        <div
-          className={`form-field ${errors.appliedDate ? 'has-error' : ''}`}
-        >
+        <div className={`form-field ${errors.appliedDate ? 'has-error' : ''}`}>
           <label htmlFor="appliedDate">Applied Date *</label>
-
           <input
             id="appliedDate"
             name="appliedDate"
@@ -209,26 +198,16 @@ function ApplicationForm({ onAddApplication }) {
               errors.appliedDate ? 'appliedDate-error' : undefined
             }
           />
-
           {errors.appliedDate && (
-            <p
-              id="appliedDate-error"
-              className="error-message"
-              role="alert"
-            >
+            <p id="appliedDate-error" className="error-message" role="alert">
               {errors.appliedDate}
             </p>
           )}
         </div>
       </div>
 
-      <div
-        className={`form-field full-width ${
-          errors.jobLink ? 'has-error' : ''
-        }`}
-      >
+      <div className={`form-field full-width ${errors.jobLink ? 'has-error' : ''}`}>
         <label htmlFor="jobLink">Job Posting Link *</label>
-
         <input
           id="jobLink"
           name="jobLink"
@@ -241,7 +220,6 @@ function ApplicationForm({ onAddApplication }) {
           aria-invalid={Boolean(errors.jobLink)}
           aria-describedby={errors.jobLink ? 'jobLink-error' : undefined}
         />
-
         {errors.jobLink && (
           <p id="jobLink-error" className="error-message" role="alert">
             {errors.jobLink}
@@ -251,15 +229,14 @@ function ApplicationForm({ onAddApplication }) {
 
       <div className="form-actions">
         <button type="submit" className="primary-button">
-          Add Application
+          Add Application (Enter)
         </button>
-
         <button
           type="button"
           className="cancel-button"
           onClick={handleReset}
         >
-          Reset / Cancel
+          Reset / Cancel (Esc)
         </button>
       </div>
     </form>
