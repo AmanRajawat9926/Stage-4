@@ -1,4 +1,6 @@
+import React from 'react';
 import { useMemo } from 'react';
+
 import {
   ROUNDS,
   getDerivedRound,
@@ -9,15 +11,18 @@ import {
 const DEFAULT_ROUNDS = ['Saved', 'Applied', 'Screening', 'Interview', 'Offer', 'Rejected'];
 
 function HeaderStats({ applications = [] }) {
-  const activeRounds = ROUNDS || DEFAULT_ROUNDS;
+  const activeRounds = Array.isArray(ROUNDS) ? ROUNDS : DEFAULT_ROUNDS;
 
   const { counts, staleCount, upcomingInterviews } = useMemo(() => {
+    const safeApps = Array.isArray(applications) ? applications : [];
+
     const initialCounts = activeRounds.reduce((acc, round) => {
       acc[round] = 0;
       return acc;
     }, {});
 
-    applications.forEach((app) => {
+    safeApps.forEach((app) => {
+      if (!app) return;
       const currentRound = app.status || (getDerivedRound ? getDerivedRound(app) : 'Applied');
 
       if (initialCounts[currentRound] !== undefined) {
@@ -27,10 +32,12 @@ function HeaderStats({ applications = [] }) {
 
     return {
       counts: initialCounts,
-      staleCount: typeof countStaleApplications === 'function' ? countStaleApplications(applications) : 0,
-      upcomingInterviews: typeof countUpcomingInterviews === 'function' ? countUpcomingInterviews(applications) : 0,
+      staleCount: typeof countStaleApplications === 'function' ? countStaleApplications(safeApps) : 0,
+      upcomingInterviews: typeof countUpcomingInterviews === 'function' ? countUpcomingInterviews(safeApps) : 0,
     };
   }, [applications, activeRounds]);
+
+  const safeAppsCount = Array.isArray(applications) ? applications.length : 0;
 
   return (
     <section
@@ -41,7 +48,7 @@ function HeaderStats({ applications = [] }) {
         {/* Total Tracked */}
         <li className="stat-card total">
           <span className="stat-label">Total Tracked</span>
-          <span className="stat-count stat-num">{applications.length}</span>
+          <span className="stat-count stat-num">{safeAppsCount}</span>
         </li>
 
         {/* Dynamic Round Cards */}

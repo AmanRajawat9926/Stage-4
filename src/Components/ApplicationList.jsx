@@ -1,3 +1,4 @@
+import React from 'react';
 import ApplicationItem from './ApplicationItem';
 import EditApplicationRow from './EditApplicationRow';
 
@@ -15,8 +16,13 @@ function ApplicationList({
   onAddInterviewRound,
   onRemoveInterviewRound,
 }) {
-  // Normalize items to handle both prop variants gracefully
-  const list = filteredApplications || applications || [];
+  // Normalize items safely with array validation
+  const list = Array.isArray(filteredApplications)
+    ? filteredApplications
+    : Array.isArray(applications)
+    ? applications
+    : [];
+
   const total = totalCount !== undefined ? totalCount : list.length;
 
   // 1. Fully empty state
@@ -72,11 +78,12 @@ function ApplicationList({
       </div>
 
       <ul className="application-items" role="list">
-        {list.map((application) => {
+        {list.map((application, index) => {
           const isEditing = editingId === application.id;
+          const itemKey = application.id || index;
 
           return (
-            <li key={application.id} className="application-list-item">
+            <li key={itemKey} className="application-list-item">
               {isEditing ? (
                 <EditApplicationRow
                   application={application}

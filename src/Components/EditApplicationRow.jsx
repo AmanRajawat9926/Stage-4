@@ -1,3 +1,4 @@
+import React from 'react';
 import { useState } from 'react';
 import {
   ROUNDS,
@@ -7,14 +8,15 @@ import {
   getDerivedRound,
 } from '../Utils/helpers';
 
-function EditApplicationRow({ application, onSave, onCancel }) {
-  const currentRound = application.status || getDerivedRound(application);
+function EditApplicationRow({ application = {}, onSave, onCancel }) {
+  const appId = application.id || 'temp';
+  const currentRound = application.status || (getDerivedRound ? getDerivedRound(application) : '') || 'Applied';
 
   const [formData, setFormData] = useState({
     company: application.company || '',
     role: application.role || '',
-    round: currentRound || 'Applied',
-    appliedDate: application.appliedDate || getTodayString(),
+    round: currentRound,
+    appliedDate: application.appliedDate || (getTodayString ? getTodayString() : ''),
     jobLink: application.jobLink || '',
   });
 
@@ -28,7 +30,7 @@ function EditApplicationRow({ application, onSave, onCancel }) {
       [name]: value,
     }));
 
-    if (validateField) {
+    if (typeof validateField === 'function') {
       const fieldError = validateField(name, value);
       setErrors((prev) => ({
         ...prev,
@@ -38,9 +40,9 @@ function EditApplicationRow({ application, onSave, onCancel }) {
   };
 
   const handleSave = () => {
-    if (validateApplication) {
+    if (typeof validateApplication === 'function') {
       const validationErrors = validateApplication(formData);
-      if (Object.keys(validationErrors).length > 0) {
+      if (validationErrors && Object.keys(validationErrors).length > 0) {
         setErrors(validationErrors);
         return;
       }
@@ -80,7 +82,9 @@ function EditApplicationRow({ application, onSave, onCancel }) {
       jobLink: formData.jobLink.trim(),
     };
 
-    onSave(updatedApplication, newTransition);
+    if (typeof onSave === 'function') {
+      onSave(updatedApplication, newTransition);
+    }
   };
 
   const handleSubmit = (e) => {
@@ -91,7 +95,9 @@ function EditApplicationRow({ application, onSave, onCancel }) {
   const handleKeyDown = (e) => {
     if (e.key === 'Escape') {
       e.preventDefault();
-      onCancel();
+      if (typeof onCancel === 'function') {
+        onCancel();
+      }
     }
   };
 
@@ -110,14 +116,14 @@ function EditApplicationRow({ application, onSave, onCancel }) {
       onSubmit={handleSubmit}
       onKeyDown={handleKeyDown}
       noValidate
-      aria-label={`Editing application for ${application.company}`}
+      aria-label={`Editing application for ${application.company || 'position'}`}
     >
       <div className="edit-grid">
         {/* Company */}
         <div className={`form-field ${errors.company ? 'has-error' : ''}`}>
-          <label htmlFor={`edit-company-${application.id}`}>Company *</label>
+          <label htmlFor={`edit-company-${appId}`}>Company *</label>
           <input
-            id={`edit-company-${application.id}`}
+            id={`edit-company-${appId}`}
             name="company"
             type="text"
             value={formData.company}
@@ -126,12 +132,12 @@ function EditApplicationRow({ application, onSave, onCancel }) {
             className={errors.company ? 'input-error' : ''}
             aria-invalid={Boolean(errors.company)}
             aria-describedby={
-              errors.company ? `edit-company-error-${application.id}` : undefined
+              errors.company ? `edit-company-error-${appId}` : undefined
             }
           />
           {errors.company && (
             <p
-              id={`edit-company-error-${application.id}`}
+              id={`edit-company-error-${appId}`}
               className="error-message"
               role="alert"
             >
@@ -142,9 +148,9 @@ function EditApplicationRow({ application, onSave, onCancel }) {
 
         {/* Role */}
         <div className={`form-field ${errors.role ? 'has-error' : ''}`}>
-          <label htmlFor={`edit-role-${application.id}`}>Role *</label>
+          <label htmlFor={`edit-role-${appId}`}>Role *</label>
           <input
-            id={`edit-role-${application.id}`}
+            id={`edit-role-${appId}`}
             name="role"
             type="text"
             value={formData.role}
@@ -152,12 +158,12 @@ function EditApplicationRow({ application, onSave, onCancel }) {
             className={errors.role ? 'input-error' : ''}
             aria-invalid={Boolean(errors.role)}
             aria-describedby={
-              errors.role ? `edit-role-error-${application.id}` : undefined
+              errors.role ? `edit-role-error-${appId}` : undefined
             }
           />
           {errors.role && (
             <p
-              id={`edit-role-error-${application.id}`}
+              id={`edit-role-error-${appId}`}
               className="error-message"
               role="alert"
             >
@@ -168,9 +174,9 @@ function EditApplicationRow({ application, onSave, onCancel }) {
 
         {/* Round / Status */}
         <div className="form-field">
-          <label htmlFor={`edit-round-${application.id}`}>Status / Round</label>
+          <label htmlFor={`edit-round-${appId}`}>Status / Round</label>
           <select
-            id={`edit-round-${application.id}`}
+            id={`edit-round-${appId}`}
             name="round"
             value={formData.round}
             onChange={handleChange}
@@ -185,9 +191,9 @@ function EditApplicationRow({ application, onSave, onCancel }) {
 
         {/* Applied Date */}
         <div className={`form-field ${errors.appliedDate ? 'has-error' : ''}`}>
-          <label htmlFor={`edit-appliedDate-${application.id}`}>Applied Date *</label>
+          <label htmlFor={`edit-appliedDate-${appId}`}>Applied Date *</label>
           <input
-            id={`edit-appliedDate-${application.id}`}
+            id={`edit-appliedDate-${appId}`}
             type="date"
             name="appliedDate"
             max={getTodayString ? getTodayString() : undefined}
@@ -197,13 +203,13 @@ function EditApplicationRow({ application, onSave, onCancel }) {
             aria-invalid={Boolean(errors.appliedDate)}
             aria-describedby={
               errors.appliedDate
-                ? `edit-appliedDate-error-${application.id}`
+                ? `edit-appliedDate-error-${appId}`
                 : undefined
             }
           />
           {errors.appliedDate && (
             <p
-              id={`edit-appliedDate-error-${application.id}`}
+              id={`edit-appliedDate-error-${appId}`}
               className="error-message"
               role="alert"
             >
@@ -214,9 +220,9 @@ function EditApplicationRow({ application, onSave, onCancel }) {
 
         {/* Job Link */}
         <div className={`form-field full-width ${errors.jobLink ? 'has-error' : ''}`}>
-          <label htmlFor={`edit-jobLink-${application.id}`}>Job Link</label>
+          <label htmlFor={`edit-jobLink-${appId}`}>Job Link</label>
           <input
-            id={`edit-jobLink-${application.id}`}
+            id={`edit-jobLink-${appId}`}
             type="text"
             name="jobLink"
             value={formData.jobLink}
@@ -225,12 +231,12 @@ function EditApplicationRow({ application, onSave, onCancel }) {
             className={errors.jobLink ? 'input-error' : ''}
             aria-invalid={Boolean(errors.jobLink)}
             aria-describedby={
-              errors.jobLink ? `edit-jobLink-error-${application.id}` : undefined
+              errors.jobLink ? `edit-jobLink-error-${appId}` : undefined
             }
           />
           {errors.jobLink && (
             <p
-              id={`edit-jobLink-error-${application.id}`}
+              id={`edit-jobLink-error-${appId}`}
               className="error-message"
               role="alert"
             >

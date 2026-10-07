@@ -1,22 +1,29 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+
 import HeaderStats from './Components/HeaderStats';
 import FilterBar from './Components/FilterBar';
 import ApplicationForm from './Components/ApplicationForm';
 import ApplicationList from './Components/ApplicationList';
 import ViewSwitcher from './Components/ViewSwitcher';
 import JobBoard from './Components/JobBoard';
+
 import { sanitizeText } from './Components/JobCard';
+
 import {
   migrateApplications,
   getDerivedRound,
   createTransition,
+  getTodayString,
 } from './Utils/helpers';
+
 import './App.css';
 
 const STORAGE_KEY = 'penthara_job_applications';
 
 function UndoToast({ undoAction, onUndo }) {
-  if (!undoAction) return null;
+  if (!undoAction) {
+    return null;
+  }
 
   return (
     <div className="undo-toast" role="status" aria-live="polite">
@@ -44,11 +51,7 @@ function UndoToast({ undoAction, onUndo }) {
         )}
       </span>
 
-      <button
-        type="button"
-        onClick={onUndo}
-        className="undo-btn"
-      >
+      <button type="button" onClick={onUndo} className="undo-btn">
         Undo
       </button>
     </div>
@@ -56,17 +59,23 @@ function UndoToast({ undoAction, onUndo }) {
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('tracker'); // 'tracker' | 'job-board'
+  const [activeTab, setActiveTab] = useState('tracker');
   const [showAddForm, setShowAddForm] = useState(false);
 
   const [applications, setApplications] = useState(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return [];
+      if (!raw) {
+        return [];
+      }
+
       const parsed = JSON.parse(raw);
       return migrateApplications(parsed);
     } catch (error) {
-      console.error('Failed to parse local storage applications:', error);
+      console.error(
+        'Failed to parse local storage applications:',
+        error
+      );
       return [];
     }
   });
@@ -76,18 +85,24 @@ export default function App() {
   const [editingId, setEditingId] = useState(null);
   const [undoAction, setUndoAction] = useState(null);
 
-  /* Persist applications */
+  // Sync applications to localStorage
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(applications));
     } catch (error) {
-      console.error('Failed to save applications to local storage:', error);
+      console.error(
+        'Failed to save applications to local storage:',
+        error
+      );
     }
   }, [applications]);
 
-  /* Clear undo toast after 5 seconds */
+  // Auto-dismiss undo toast after 5 seconds
   useEffect(() => {
-    if (!undoAction) return undefined;
+    if (!undoAction) {
+      return undefined;
+    }
+
     const timer = setTimeout(() => setUndoAction(null), 5000);
     return () => clearTimeout(timer);
   }, [undoAction]);
@@ -97,33 +112,49 @@ export default function App() {
     setShowAddForm(false);
   };
 
-  /* Integration from JobBoard */
   const handleTrackJob = (job) => {
-    const today = new Date().toISOString().split('T')[0];
+    const company = sanitizeText(
+      job?.company || job?.company_name || 'Unknown Company'
+    );
+
+    const role = sanitizeText(
+      job?.role || job?.title || 'Untitled Role'
+    );
+
+    const jobLink = job?.url || job?.jobLink || '';
+
     const initialTransition = createTransition(null, 'Applied');
 
-    const newApp = {
-      id: Date.now().toString(),
-      company: sanitizeText(job.company_name || 'Unknown'),
-      role: sanitizeText(job.title || 'Untitled Role'),
-      appliedDate: today,
+    const newApplication = {
+      id:
+        typeof crypto !== 'undefined' &&
+        typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : Date.now().toString(),
+      company,
+      role,
+      appliedDate: getTodayString(),
       createdAt: new Date().toISOString(),
-      jobLink: job.url || '',
+      jobLink,
       history: [initialTransition],
       interviewRounds: [],
     };
 
-    setApplications((prev) => [newApp, ...prev]);
+    setApplications((prev) => [newApplication, ...prev]);
     setActiveTab('tracker');
   };
 
   const handleAddInterviewRound = (applicationId, newRound) => {
     setApplications((prev) =>
       prev.map((app) => {
-        if (app.id !== applicationId) return app;
+        if (app.id !== applicationId) {
+          return app;
+        }
+
         const interviewRounds = Array.isArray(app.interviewRounds)
           ? app.interviewRounds
           : [];
+
         return {
           ...app,
           interviewRounds: [...interviewRounds, newRound],
@@ -139,25 +170,37 @@ export default function App() {
   };
 
   const handleRemoveInterviewRound = (applicationId, roundId) => {
-    const application = applications.find((app) => app.id === applicationId);
-    if (!application) return;
+    const application = applications.find(
+      (app) => app.id === applicationId
+    );
+
+    if (!application) {
+      return;
+    }
 
     const interviewRounds = Array.isArray(application.interviewRounds)
       ? application.interviewRounds
       : [];
 
-    const removedRound = interviewRounds.find((r) => r.id === roundId);
-    if (!removedRound) return;
+    const removedRound = interviewRounds.find(
+      (round) => round.id === roundId
+    );
+
+    if (!removedRound) {
+      return;
+    }
 
     setApplications((prev) =>
       prev.map((app) => {
-        if (app.id !== applicationId) return app;
-        const rounds = Array.isArray(app.interviewRounds)
-          ? app.interviewRounds
-          : [];
+        if (app.id !== applicationId) {
+          return app;
+        }
+
         return {
           ...app,
-          interviewRounds: rounds.filter((r) => r.id !== roundId),
+          interviewRounds: interviewRounds.filter(
+            (round) => round.id !== roundId
+          ),
         };
       })
     );
@@ -175,6 +218,7 @@ export default function App() {
         app.id === updatedApplication.id ? updatedApplication : app
       )
     );
+
     setEditingId(null);
 
     if (newTransition) {
@@ -188,23 +232,39 @@ export default function App() {
 
   const handleDelete = (id) => {
     setApplications((prev) => prev.filter((app) => app.id !== id));
-    setUndoAction((prev) => (prev?.applicationId === id ? null : prev));
-    if (editingId === id) setEditingId(null);
+
+    setUndoAction((prev) =>
+      prev?.applicationId === id ? null : prev
+    );
+
+    if (editingId === id) {
+      setEditingId(null);
+    }
   };
 
   const handleUndo = () => {
-    if (!undoAction) return;
+    if (!undoAction) {
+      return;
+    }
+
     const { type, applicationId, transition, round } = undoAction;
 
     setApplications((prev) =>
       prev.map((app) => {
-        if (app.id !== applicationId) return app;
+        if (app.id !== applicationId) {
+          return app;
+        }
 
         if (type === 'transition') {
-          const history = Array.isArray(app.history) ? app.history : [];
+          const history = Array.isArray(app.history)
+            ? app.history
+            : [];
+
           return {
             ...app,
-            history: history.filter((item) => item.id !== transition.id),
+            history: history.filter(
+              (item) => item.id !== transition.id
+            ),
           };
         }
 
@@ -212,6 +272,7 @@ export default function App() {
           const interviewRounds = Array.isArray(app.interviewRounds)
             ? app.interviewRounds
             : [];
+
           return {
             ...app,
             interviewRounds: interviewRounds.filter(
@@ -224,6 +285,7 @@ export default function App() {
           const interviewRounds = Array.isArray(app.interviewRounds)
             ? app.interviewRounds
             : [];
+
           return {
             ...app,
             interviewRounds: [...interviewRounds, round],
@@ -248,6 +310,7 @@ export default function App() {
     return applications
       .filter((app) => {
         const currentRound = getDerivedRound(app);
+
         const matchesRound =
           selectedRound === 'All' || currentRound === selectedRound;
 
@@ -262,14 +325,18 @@ export default function App() {
       .sort((a, b) => {
         const dateA = a.appliedDate || '';
         const dateB = b.appliedDate || '';
-        const dateDiff = dateB.localeCompare(dateA);
 
-        if (dateDiff !== 0) return dateDiff;
+        const dateDiff = dateB.localeCompare(dateA);
+        if (dateDiff !== 0) {
+          return dateDiff;
+        }
 
         const timeA = new Date(a.createdAt || 0).getTime();
         const timeB = new Date(b.createdAt || 0).getTime();
 
-        if (timeA !== timeB) return timeB - timeA;
+        if (timeA !== timeB) {
+          return timeB - timeA;
+        }
 
         return String(b.id || '').localeCompare(String(a.id || ''));
       });
@@ -279,6 +346,7 @@ export default function App() {
     <div className="app-container">
       <header className="app-header">
         <h1 className="app-title">CareerSuite Tracker</h1>
+
         <ViewSwitcher
           activeTab={activeTab}
           setActiveTab={setActiveTab}
@@ -291,7 +359,10 @@ export default function App() {
           <section className="tracker-view">
             <HeaderStats applications={applications} />
 
-            <div className="tracker-controls" style={{ margin: '1.5rem 0' }}>
+            <div
+              className="tracker-controls"
+              style={{ margin: '1.5rem 0' }}
+            >
               {!showAddForm ? (
                 <button
                   type="button"
@@ -313,9 +384,9 @@ export default function App() {
               onSearchChange={setSearchQuery}
               selectedRound={selectedRound}
               onRoundChange={setSelectedRound}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') {
-                  e.preventDefault();
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.preventDefault();
                   handleClearFilters();
                 }
               }}

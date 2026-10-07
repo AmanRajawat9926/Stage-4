@@ -1,3 +1,4 @@
+import React from 'react';
 import { useState, useMemo } from 'react';
 import {
   calculateDaysSinceApplied,
@@ -22,6 +23,13 @@ function ApplicationItem({
   onAddInterviewRound,
   onRemoveInterviewRound,
 }) {
+  const generateId = () => {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+  };
+
   const currentRound = application.status || getDerivedRound(application);
   const badgeClass = `badge-${currentRound.toLowerCase().replace(/\s+/g, '-')}`;
 
@@ -33,9 +41,11 @@ function ApplicationItem({
 
   const sortedHistory = useMemo(() => {
     return Array.isArray(application.history)
-      ? [...application.history].sort(
-          (a, b) => new Date(b.changedAt).getTime() - new Date(a.changedAt).getTime()
-        )
+      ? [...application.history].sort((a, b) => {
+          const dateA = new Date(a.changedAt).getTime() || 0;
+          const dateB = new Date(b.changedAt).getTime() || 0;
+          return dateB - dateA;
+        })
       : [];
   }, [application.history]);
 
@@ -92,7 +102,7 @@ function ApplicationItem({
 
     if (onAddInterviewRound) {
       onAddInterviewRound(application.id, {
-        id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
+        id: generateId(),
         type: interviewForm.type,
         date: interviewForm.date,
         note: interviewForm.note.trim(),
@@ -107,6 +117,11 @@ function ApplicationItem({
       e.preventDefault();
       resetInterviewForm();
     }
+  };
+
+  const formatDateLabel = (dateStr) => {
+    const parsed = new Date(dateStr);
+    return isNaN(parsed.getTime()) ? 'N/A' : parsed.toLocaleString();
   };
 
   return (
@@ -273,7 +288,7 @@ function ApplicationItem({
 
                 <div className="form-actions">
                   <button type="submit" className="primary-button">
-                    Add Round (Enter)
+                    Add Round
                   </button>
 
                   <button
@@ -292,7 +307,7 @@ function ApplicationItem({
             ) : (
               <ul className="interview-round-list">
                 {interviewRounds.map((round) => (
-                  <li key={round.id} className="interview-round-summary">
+                  <li key={round.id || round.date} className="interview-round-summary">
                     <div className="interview-round-info">
                       <strong>{round.type}</strong>
                       <span>{round.date}</span>
@@ -325,8 +340,8 @@ function ApplicationItem({
           >
             <h4>Transition History ({sortedHistory.length})</h4>
             <ul className="history-list">
-              {sortedHistory.map((item) => (
-                <li key={item.id} className="history-item">
+              {sortedHistory.map((item, index) => (
+                <li key={item.id || index} className="history-item">
                   <span>
                     {item.from && (
                       <>
@@ -338,7 +353,7 @@ function ApplicationItem({
                   </span>
 
                   <span>
-                    {new Date(item.changedAt).toLocaleString()}
+                    {formatDateLabel(item.changedAt)}
                   </span>
                 </li>
               ))}

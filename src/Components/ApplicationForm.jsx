@@ -1,3 +1,4 @@
+import React from 'react';
 import { useState } from 'react';
 import {
   ROUNDS,
@@ -18,6 +19,13 @@ function ApplicationForm({ onAddApplication, onCancel }) {
   const [formData, setFormData] = useState(getInitialForm);
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
+
+  const generateId = () => {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -51,18 +59,21 @@ function ApplicationForm({ onAddApplication, onCancel }) {
     }));
   };
 
-  const handleReset = () => {
+  const resetFormState = () => {
     setFormData(getInitialForm());
     setErrors({});
     setTouched({});
+  };
+
+  const handleCancel = () => {
+    resetFormState();
     if (onCancel) onCancel();
   };
 
-  // Keyboard shortcut constraint: Enter to submit, Escape to cancel/reset
   const handleKeyDown = (e) => {
     if (e.key === 'Escape') {
       e.preventDefault();
-      handleReset();
+      handleCancel();
     }
   };
 
@@ -84,16 +95,17 @@ function ApplicationForm({ onAddApplication, onCancel }) {
     }
 
     const timestamp = new Date().toISOString();
+    const newId = generateId();
 
     onAddApplication({
-      id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
+      id: newId,
       company: formData.company.trim(),
       role: formData.role.trim(),
       round: formData.round,
       status: formData.round,
       history: [
         {
-          id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
+          id: generateId(),
           from: null,
           to: formData.round,
           changedAt: timestamp,
@@ -105,7 +117,7 @@ function ApplicationForm({ onAddApplication, onCancel }) {
       createdAt: Date.now(),
     });
 
-    handleReset();
+    resetFormState();
   };
 
   return (
@@ -229,14 +241,14 @@ function ApplicationForm({ onAddApplication, onCancel }) {
 
       <div className="form-actions">
         <button type="submit" className="primary-button">
-          Add Application (Enter)
+          Add Application
         </button>
         <button
           type="button"
           className="cancel-button"
-          onClick={handleReset}
+          onClick={handleCancel}
         >
-          Reset / Cancel (Esc)
+          Cancel (Esc)
         </button>
       </div>
     </form>

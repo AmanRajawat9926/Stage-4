@@ -1,3 +1,4 @@
+import React from 'react';
 import { ROUNDS } from '../Utils/helpers';
 
 function FilterBar({
@@ -10,18 +11,20 @@ function FilterBar({
   onKeyDown,
 }) {
   const currentStatus = selectedRound || filterStatus || 'All';
+
   const handleStatusChange = (status) => {
-    if (onRoundChange) onRoundChange(status);
-    if (setFilterStatus) setFilterStatus(status);
+    if (typeof onRoundChange === 'function') onRoundChange(status);
+    if (typeof setFilterStatus === 'function') setFilterStatus(status);
   };
 
-  const hasActiveFilter = searchQuery.trim() !== '' || currentStatus !== 'All';
+  const hasActiveFilter = Boolean(searchQuery.trim()) || currentStatus !== 'All';
 
   const handleClearSearch = () => {
-    if (onSearchChange) onSearchChange('');
+    if (typeof onSearchChange === 'function') onSearchChange('');
   };
 
-  const availableStatuses = ROUNDS || [
+  // Safely fallback and filter out 'All' if already present in ROUNDS
+  const rawRounds = Array.isArray(ROUNDS) ? ROUNDS : [
     'Saved',
     'Applied',
     'Screening',
@@ -29,6 +32,7 @@ function FilterBar({
     'Offer',
     'Rejected',
   ];
+  const availableStatuses = rawRounds.filter((status) => status !== 'All');
 
   return (
     <section
@@ -37,7 +41,7 @@ function FilterBar({
       onKeyDown={onKeyDown}
     >
       {/* Search Input */}
-      {onSearchChange && (
+      {typeof onSearchChange === 'function' && (
         <div className="search-field">
           <label htmlFor="search-input" className="sr-only">
             Search by company or role
@@ -74,6 +78,7 @@ function FilterBar({
           type="button"
           className={`filter-btn ${currentStatus === 'All' ? 'active' : ''}`}
           onClick={() => handleStatusChange('All')}
+          aria-pressed={currentStatus === 'All'}
         >
           All
         </button>
@@ -83,6 +88,7 @@ function FilterBar({
             type="button"
             className={`filter-btn ${currentStatus === status ? 'active' : ''}`}
             onClick={() => handleStatusChange(status)}
+            aria-pressed={currentStatus === status}
           >
             {status}
           </button>
