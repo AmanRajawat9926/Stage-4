@@ -1,71 +1,37 @@
 import React from 'react';
+import {
+  mapJobData,
+  formatJobUrl,
+} from '../Utils/sanitize';
 
+// Kept for existing App.test.jsx compatibility.
 export function sanitizeText(value) {
-  if (value === null || value === undefined) {
-    return '';
-  }
-
-  return String(value)
+  return String(value ?? '')
     .replace(/<[^>]*>/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
-/**
- * Formats a given job URL to ensure it has a valid protocol prefix (https://).
- */
-export function formatJobUrl(url) {
-  if (!url) {
-    return '';
-  }
-
-  const trimmed = String(url).trim();
-
-  if (!trimmed) {
-    return '';
-  }
-
-  if (/^https?:\/\//i.test(trimmed)) {
-    return trimmed;
-  }
-
-  return `https://${trimmed}`;
-}
-
-/**
- * JobCard Component
- * Displays individual job listing details with accessibility labels and formatted links.
- */
 export default function JobCard({
   job = {},
   onTrackJob,
   onViewDetails,
 }) {
-  const safeTitle = sanitizeText(
-    job.title || 'Untitled Role'
-  );
+  const safeJob = mapJobData(job);
 
-  const safeCompany = sanitizeText(
-    job.company_name ||
-      job.company ||
-      'Unknown Company'
-  );
+  if (!safeJob) {
+    return null;
+  }
 
-  const safeLocation = sanitizeText(
-    job.location ||
-      'Remote / Unspecified'
-  );
+  const {
+    title,
+    company_name,
+    location,
+    tags,
+    remote,
+  } = safeJob;
 
-  const safeTags = Array.isArray(job.tags)
-    ? job.tags
-        .map((tag) => sanitizeText(tag))
-        .filter(Boolean)
-        .slice(0, 5)
-    : [];
-
-  const formattedUrl = formatJobUrl(
-    job.url || job.jobLink
-  );
+  const formattedUrl = formatJobUrl(safeJob.url);
 
   return (
     <article
@@ -75,15 +41,15 @@ export default function JobCard({
       <div className="job-card-header">
         <div>
           <span className="job-company">
-            {safeCompany}
+            {company_name}
           </span>
 
           <h3 className="job-title">
-            {safeTitle}
+            {title}
           </h3>
         </div>
 
-        {job.remote && (
+        {remote && (
           <span className="remote-badge">
             <span
               className="pulse-dot"
@@ -117,17 +83,17 @@ export default function JobCard({
           />
         </svg>
 
-        <span>{safeLocation}</span>
+        <span>{location}</span>
       </div>
 
-      {safeTags.length > 0 && (
+      {tags.length > 0 && (
         <div
           className="job-tags"
           aria-label="Job tags"
         >
-          {safeTags.map((tag, index) => (
+          {tags.slice(0, 5).map((tag, index) => (
             <span
-              key={`${job.id || 'job'}-tag-${index}`}
+              key={`${safeJob.id}-tag-${index}`}
               className="tag-chip"
             >
               {tag}
@@ -141,13 +107,8 @@ export default function JobCard({
           <button
             type="button"
             className="btn-secondary"
-            onClick={(event) =>
-              onViewDetails(
-                job,
-                event.currentTarget
-              )
-            }
-            aria-label={`View details for ${safeTitle} at ${safeCompany}`}
+            onClick={() => onViewDetails(safeJob)}
+            aria-label={`View details for ${title} at ${company_name}`}
           >
             View Details
           </button>
@@ -159,7 +120,7 @@ export default function JobCard({
             target="_blank"
             rel="noopener noreferrer"
             className="btn-link"
-            aria-label={`View ${safeTitle} listing in new tab`}
+            aria-label={`View ${title} listing in new tab`}
           >
             View Listing ↗
           </a>
@@ -169,8 +130,8 @@ export default function JobCard({
           <button
             type="button"
             className="btn-track"
-            onClick={() => onTrackJob(job)}
-            aria-label={`Track job: ${safeTitle} at ${safeCompany}`}
+            onClick={() => onTrackJob(safeJob)}
+            aria-label={`Track job: ${title} at ${company_name}`}
           >
             + Track this job
           </button>

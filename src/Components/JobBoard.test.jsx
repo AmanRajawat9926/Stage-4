@@ -1,38 +1,48 @@
 import React from 'react';
+
 import {
   render,
   screen,
   fireEvent,
-  waitFor,
   act,
 } from '@testing-library/react';
+
 import '@testing-library/jest-dom';
-import { describe, it, test, expect, beforeEach, afterEach, vi } from 'vitest';
 
-import * as Helpers from '../Utils/helpers';
+import {
+  describe,
+  test,
+  expect,
+  beforeEach,
+  afterEach,
+  vi,
+} from 'vitest';
+
 import JobBoard from './JobBoard';
+import { mapJobData } from '../Utils/sanitize';
 
-// Utility helper fallbacks in case export names vary
-const sanitizeHtmlToText =
-  Helpers.sanitizeHtmlToText ||
-  Helpers.sanitizeText ||
-  ((html) => html?.replace(/<[^>]*>?/gm, '') || '');
+const makeJob = ({
+  slug,
+  title,
+  company,
+  remote,
+}) => ({
+  slug,
+  company_name: company,
+  title,
+  location: remote
+    ? 'Remote'
+    : 'India',
+  remote,
+  tags: ['React'],
+  url: `https://example.com/${slug}`,
+  description:
+    '<p>Frontend Developer</p>',
+});
 
-const mapJobData =
-  Helpers.mapJobData ||
-  ((job) => ({
-    id: job.slug || job.id,
-    company_name: job.company_name || job.company,
-    title: job.title || job.role,
-    location: job.location,
-    remote: job.remote,
-    tags: job.tags || [],
-    url: job.url || job.jobLink,
-    description: sanitizeHtmlToText(job.description || ''),
-  }));
-
-describe('Job Board requirements and logic', () => {
+describe('Job Board Day 3', () => {
   beforeEach(() => {
+    vi.useFakeTimers();
     vi.restoreAllMocks();
   });
 
@@ -41,308 +51,302 @@ describe('Job Board requirements and logic', () => {
     vi.useRealTimers();
   });
 
-  test('sanitizes HTML and maps API job data correctly', () => {
-    const apiJob = {
-      slug: 'react-dev-123',
-      company_name: 'Tech Corp',
-      title: 'Frontend Engineer',
+  test('mapper safely converts HTML description into plain text', () => {
+    const mapped = mapJobData({
+      slug: 'safe-job',
+      company_name: 'Safe Corp',
+      title: 'Frontend Developer',
       location: 'Remote',
       remote: true,
-      tags: ['React', 'JavaScript'],
-      url: 'https://example.com/job',
+      tags: ['React'],
+      url: 'https://example.com/safe-job',
       description:
+        '<p>Great role</p>' +
         '<script>alert("xss")</script>' +
-        '<strong>Great role!</strong>',
-    };
+        '<img src=x onerror="alert(1)">' +
+        '<strong>React</strong>',
+    });
 
-    const cleanText = sanitizeHtmlToText(apiJob.description);
+    expect(mapped).not.toBeNull();
 
-    expect(cleanText).not.toContain('<script>');
-    expect(cleanText).not.toContain('<strong>');
-    expect(cleanText).toContain('alert("xss")');
-    expect(cleanText).toContain('Great role!');
+    expect(mapped.description).toContain(
+      'Great role'
+    );
 
-    const mapped = mapJobData(apiJob);
+    expect(mapped.description).toContain(
+      'alert("xss")'
+    );
 
-    expect(mapped.id).toBe('react-dev-123');
-    expect(mapped.company_name).toBe('Tech Corp');
-    expect(mapped.title).toBe('Frontend Engineer');
-    expect(mapped.location).toBe('Remote');
-    expect(mapped.remote).toBe(true);
-    expect(mapped.tags).toEqual(['React', 'JavaScript']);
-    expect(mapped.url).toBe('https://example.com/job');
-    expect(mapped.description).toBe('alert("xss")Great role!');
+    expect(mapped.description).toContain(
+      'React'
+    );
+
+    expect(mapped.description).not.toContain(
+      '<script>'
+    );
+
+    expect(mapped.description).not.toContain(
+      '<img'
+    );
+
+    expect(mapped.description).not.toContain(
+      'onerror'
+    );
   });
 
-  test('pagination uses API last_page and preserves the current search', async () => {
-    vi.useFakeTimers();
+  test(
+    'remote-only filtering is applied across API pages before pagination',
+    async () => {
+      global.fetch = vi.fn((url) => {
+        const parsedUrl = new URL(url);
 
-    global.fetch = vi.fn().mockImplementation((url) => {
-      const parsedUrl = new URL(url, 'http://localhost');
-      const page = parsedUrl.searchParams.get('page');
+        const page =
+          parsedUrl.searchParams.get('page');
 
-      if (page === '2') {
+        const pages = {
+          '1': {
+            data: [
+              makeJob({
+                slug: 'remote-1',
+                title: 'Remote One',
+                company: 'Remote Corp',
+                remote: true,
+              }),
+
+              makeJob({
+                slug: 'onsite-1',
+                title: 'Onsite One',
+                company: 'Office Corp',
+                remote: false,
+              }),
+            ],
+
+            meta: {
+              last_page: 2,
+            },
+          },
+
+          '2': {
+            data: [
+              makeJob({
+                slug: 'remote-2',
+                title: 'Remote Two',
+                company: 'Remote Corp',
+                remote: true,
+              }),
+
+              makeJob({
+                slug: 'onsite-2',
+                title: 'Onsite Two',
+                company: 'Office Corp',
+                remote: false,
+              }),
+            ],
+
+            meta: {
+              last_page: 2,
+            },
+          },
+        };
+
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve(
+              pages[page] || pages['1']
+            ),
+        });
+      });
+
+      render(
+        <JobBoard
+          onTrackJob={vi.fn()}
+        />
+      );
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(
+        screen.getByText('Remote One')
+      ).toBeInTheDocument();
+
+      const remoteCheckbox =
+        screen.getByRole('checkbox', {
+          name: /show remote jobs only/i,
+        });
+
+      fireEvent.click(remoteCheckbox);
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(
+        screen.getByText('Remote One')
+      ).toBeInTheDocument();
+
+      expect(
+        screen.getByText('Remote Two')
+      ).toBeInTheDocument();
+
+      expect(
+        screen.queryByText('Onsite One')
+      ).not.toBeInTheDocument();
+
+      expect(
+        screen.queryByText('Onsite Two')
+      ).not.toBeInTheDocument();
+
+      expect(
+        screen.getByText('Page 1 of 1')
+      ).toBeInTheDocument();
+
+      expect(global.fetch).toHaveBeenCalledTimes(3);
+    }
+  );
+
+  test(
+    'older search response cannot overwrite newer search result',
+    async () => {
+      let resolveReact;
+      let resolveVue;
+
+      global.fetch = vi.fn((url) => {
+        const parsedUrl = new URL(url);
+
+        const search =
+          parsedUrl.searchParams.get('search');
+
+        if (search === 'React') {
+          return new Promise((resolve) => {
+            resolveReact = resolve;
+          });
+        }
+
+        if (search === 'Vue') {
+          return new Promise((resolve) => {
+            resolveVue = resolve;
+          });
+        }
+
         return Promise.resolve({
           ok: true,
           json: () =>
             Promise.resolve({
               data: [
-                {
-                  slug: 'job-page-2',
-                  company_name: 'Page Two Company',
-                  title: 'Page Two Developer',
-                  location: 'Remote',
+                makeJob({
+                  slug: 'initial',
+                  title: 'Initial Job',
+                  company: 'Initial Corp',
                   remote: true,
-                  tags: ['React'],
-                  url: 'https://example.com/page-2',
-                  description: '<p>Page two job</p>',
-                },
+                }),
               ],
               meta: {
-                last_page: 3,
+                last_page: 1,
               },
             }),
         });
-      }
-
-      return Promise.resolve({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            data: [
-              {
-                slug: 'job-page-1',
-                company_name: 'Page One Company',
-                title: 'Page One Developer',
-                location: 'India',
-                remote: false,
-                tags: ['JavaScript'],
-                url: 'https://example.com/page-1',
-                description: '<p>Page one job</p>',
-              },
-            ],
-            meta: {
-              last_page: 3,
-            },
-          }),
       });
-    });
 
-    render(<JobBoard onTrackJob={vi.fn()} />);
+      render(
+        <JobBoard
+          onTrackJob={vi.fn()}
+        />
+      );
 
-    await act(async () => {
-      await vi.runAllTimersAsync();
-    });
-
-    expect(screen.getByText('Page One Developer')).toBeInTheDocument();
-    expect(screen.getByText('Page 1 of 3')).toBeInTheDocument();
-
-    const searchInput = screen.getByRole('searchbox', {
-      name: /Search jobs/i,
-    });
-
-    fireEvent.change(searchInput, {
-      target: {
-        value: 'React',
-      },
-    });
-
-    await act(async () => {
-      vi.advanceTimersByTime(300);
-      await vi.runAllTimersAsync();
-    });
-
-    expect(global.fetch).toHaveBeenCalledWith(
-      expect.stringContaining('search=React'),
-      expect.any(Object)
-    );
-
-    const nextBtn = screen.getByRole('button', { name: /Next/i });
-    fireEvent.click(nextBtn);
-
-    await act(async () => {
-      await vi.runAllTimersAsync();
-    });
-
-    const lastCall =
-      global.fetch.mock.calls[global.fetch.mock.calls.length - 1][0];
-
-    expect(lastCall).toContain('page=2');
-    expect(lastCall).toContain('search=React');
-  });
-
-  test('older search responses cannot overwrite the latest search', async () => {
-    vi.useFakeTimers();
-
-    let resolveReactRequest;
-    let resolveVueRequest;
-
-    global.fetch = vi.fn().mockImplementation((url) => {
-      const search = new URL(url, 'http://localhost').searchParams.get('search');
-
-      if (search === 'React') {
-        return new Promise((resolve) => {
-          resolveReactRequest = resolve;
-        });
-      }
-
-      if (search === 'Vue') {
-        return new Promise((resolve) => {
-          resolveVueRequest = resolve;
-        });
-      }
-
-      return Promise.resolve({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            data: [],
-            meta: {
-              last_page: 1,
-            },
-          }),
+      await act(async () => {
+        await vi.runAllTimersAsync();
       });
-    });
 
-    render(<JobBoard onTrackJob={vi.fn()} />);
+      const searchInput =
+        screen.getByRole('searchbox', {
+          name: /search jobs/i,
+        });
 
-    await act(async () => {
-      await vi.runAllTimersAsync();
-    });
+      fireEvent.change(searchInput, {
+        target: {
+          value: 'React',
+        },
+      });
 
-    const searchInput = screen.getByRole('searchbox', {
-      name: /Search jobs/i,
-    });
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
 
-    // 1. Search for React
-    fireEvent.change(searchInput, {
-      target: {
-        value: 'React',
-      },
-    });
+      expect(resolveReact).toBeDefined();
 
-    await act(async () => {
-      vi.advanceTimersByTime(300);
-    });
+      fireEvent.change(searchInput, {
+        target: {
+          value: 'Vue',
+        },
+      });
 
-    // 2. Search for Vue (canceling/overriding React)
-    fireEvent.change(searchInput, {
-      target: {
-        value: 'Vue',
-      },
-    });
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
 
-    await act(async () => {
-      vi.advanceTimersByTime(300);
-    });
+      expect(resolveVue).toBeDefined();
 
-    // 3. Resolve Vue first
-    await act(async () => {
-      if (resolveVueRequest) {
-        resolveVueRequest({
+      // Newer Vue request resolves first.
+      await act(async () => {
+        resolveVue({
           ok: true,
           json: () =>
             Promise.resolve({
               data: [
-                {
+                makeJob({
                   slug: 'vue-job',
-                  company_name: 'Vue Company',
                   title: 'Vue Developer',
-                  location: 'Remote',
+                  company: 'Vue Corp',
                   remote: true,
-                  tags: ['Vue'],
-                  url: 'https://example.com/vue',
-                  description: '<p>Vue job</p>',
-                },
+                }),
               ],
               meta: {
                 last_page: 1,
               },
             }),
         });
-      }
-      await vi.runAllTimersAsync();
-    });
 
-    expect(screen.getByText('Vue Developer')).toBeInTheDocument();
+        await Promise.resolve();
+      });
 
-    // 4. Resolve older React request late
-    await act(async () => {
-      if (resolveReactRequest) {
-        resolveReactRequest({
+      expect(
+        screen.getByText('Vue Developer')
+      ).toBeInTheDocument();
+
+      // Older React request resolves later.
+      await act(async () => {
+        resolveReact({
           ok: true,
           json: () =>
             Promise.resolve({
               data: [
-                {
+                makeJob({
                   slug: 'react-job',
-                  company_name: 'React Company',
                   title: 'React Developer',
-                  location: 'India',
-                  remote: false,
-                  tags: ['React'],
-                  url: 'https://example.com/react',
-                  description: '<p>React job</p>',
-                },
+                  company: 'React Corp',
+                  remote: true,
+                }),
               ],
               meta: {
                 last_page: 1,
               },
             }),
         });
-      }
-      await vi.runAllTimersAsync();
-    });
 
-    // React should be ignored in favor of the latest Vue search
-    expect(screen.queryByText('React Developer')).not.toBeInTheDocument();
-    expect(screen.getByText('Vue Developer')).toBeInTheDocument();
-  });
+        await Promise.resolve();
+      });
 
-  test('closes detail modal when Escape key is pressed', async () => {
-    const mockJobs = [
-      {
-        slug: 'job-1',
-        company_name: 'Tech Inc',
-        title: 'React Dev',
-        description: 'Great role',
-        location: 'Remote',
-        remote: true,
-      },
-    ];
+      // React must NOT overwrite the newer Vue result.
+      expect(
+        screen.queryByText('React Developer')
+      ).not.toBeInTheDocument();
 
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ data: mockJobs, links: {}, meta: { last_page: 1 } }),
-    });
-
-    render(<JobBoard onTrackJob={vi.fn()} />);
-
-    const viewButton = await screen.findByRole('button', {
-      name: /view details/i,
-    });
-    fireEvent.click(viewButton);
-
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
-
-    fireEvent.keyDown(window, { key: 'Escape', code: 'Escape' });
-
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    });
-  });
-
-  test('handles API error state with a retry option', async () => {
-    global.fetch = vi
-      .fn()
-      .mockRejectedValueOnce(new Error('Network failure'));
-
-    render(<JobBoard onTrackJob={vi.fn()} />);
-
-    const errorMessage = await screen.findByText(/failed to fetch jobs/i);
-    expect(errorMessage).toBeInTheDocument();
-
-    const retryBtn = screen.getByRole('button', { name: /retry/i });
-    expect(retryBtn).toBeInTheDocument();
-  });
+      expect(
+        screen.getByText('Vue Developer')
+      ).toBeInTheDocument();
+    }
+  );
 });

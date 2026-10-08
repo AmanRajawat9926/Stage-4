@@ -1,166 +1,355 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { mapJobData as customMapJobData } from '../Utils/sanitize';
+import { mapJobData } from '../Utils/sanitize';
 
 const API_BASE_URL = 'https://www.arbeitnow.com/api/job-board-api';
-
-/**
- * Fallback sanitizer/mapper if imported mapJobData is unavailable.
- */
-const defaultMapJobData = (raw) => {
-  if (!raw || typeof raw !== 'object') return null;
-
-  return {
-    id: raw.slug || raw.id || String(Math.random()),
-    title: raw.title || 'Untitled Position',
-    company_name: raw.company_name || raw.company || 'Unknown Company',
-    location: raw.location || 'Remote / Unspecified',
-    remote: Boolean(raw.remote),
-    tags: Array.isArray(raw.tags)
-      ? raw.tags
-      : Array.isArray(raw.job_types)
-      ? raw.job_types
-      : [],
-    description: raw.description || '',
-    url: raw.url || raw.jobLink || '',
-  };
-};
-
-const mapJobData =
-  typeof customMapJobData === 'function'
-    ? customMapJobData
-    : defaultMapJobData;
 
 export function useJobBoard() {
   const [jobs, setJobs] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [isRemoteOnly, setIsRemoteOnly] = useState(false);
+
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
-  const [status, setStatus] = useState('loading'); // 'loading' | 'success' | 'error' | 'empty'
+  const [status, setStatus] = useState('loading');
   const [errorMsg, setErrorMsg] = useState(null);
 
-  // Active AbortController reference for cleanup and retries
   const abortControllerRef = useRef(null);
+  const requestIdRef = useRef(0);
 
-  // 1. Debounce search query (300ms)
+  // Cache the complete filtered result for remote mode.
+  const remoteJobsCacheRef = useRef({
+    key: '',
+    jobs: [],
+    pageSize: 1,
+  });
+
+  // --------------------------------------------------
+  // Debounced search
+  // --------------------------------------------------
+
   useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedSearch(searchQuery);
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery.trim());
     }, 300);
 
-    return () => clearTimeout(handler);
+    return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // 2. Filter handlers (resets page to 1 on update)
-  const handleSearchChange = useCallback((queryOrEvent) => {
-    const val =
-      queryOrEvent && typeof queryOrEvent === 'object' && 'target' in queryOrEvent
-        ? queryOrEvent.target.value
-        : queryOrEvent ?? '';
+  // --------------------------------------------------
+  // Search
+  // --------------------------------------------------
 
-    setSearchQuery(val);
+  const handleSearchChange = useCallback((valueOrEvent) => {
+    const value =
+      valueOrEvent &&
+      typeof valueOrEvent === 'object' &&
+      'target' in valueOrEvent
+        ? valueOrEvent.target.value
+        : valueOrEvent ?? '';
+
+    setSearchQuery(String(value));
     setCurrentPage(1);
   }, []);
 
-  const handleRemoteToggle = useCallback((remoteVal) => {
-    setIsRemoteOnly((prev) => (typeof remoteVal === 'boolean' ? remoteVal : !prev));
+  // --------------------------------------------------
+  // Remote filter
+  // --------------------------------------------------
+
+  const handleRemoteToggle = useCallback((value) => {
+    setIsRemoteOnly((previous) =>
+      typeof value === 'boolean' ? value : !previous
+    );
+
     setCurrentPage(1);
   }, []);
 
-  // 3. Main Data Fetching Function
+  // --------------------------------------------------
+  // Fetch one API page
+  // --------------------------------------------------
+
+  const fetchApiPage = useCallback(async (page, search, signal) => {
+    const url = new URL(API_BASE_URL);
+
+    url.searchParams.set('page', String(page));
+
+    if (search) {
+      url.searchParams.set('search', search);
+    }
+
+    const response = await fetch(url.toString(), {
+      signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Server returned HTTP ${response.status}`);
+    }
+
+    const responseData = await response.json();
+
+    if (signal.aborted) {
+      throw new DOMException('Request aborted', 'AbortError');
+    }
+
+    const rawJobs = Array.isArray(responseData.data)
+      ? responseData.data
+      : [];
+
+    const mappedJobs = rawJobs
+      .map(mapJobData)
+      .filter(Boolean);
+
+    const lastPage =
+      Number(responseData.meta?.last_page) ||
+      Number(responseData.meta?.total_pages) ||
+      1;
+
+    return {
+      jobs: mappedJobs,
+      lastPage,
+    };
+  }, []);
+
+  // --------------------------------------------------
+  // Main request
+  // --------------------------------------------------
+
   const loadJobs = useCallback(
-    async (page, search, remoteFilter, signal) => {
+    async (page, search, remoteOnly) => {
+      const requestId = ++requestIdRef.current;
+
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
+      const { signal } = controller;
+
       setStatus('loading');
       setErrorMsg(null);
 
       try {
-        const url = new URL(API_BASE_URL);
-        url.searchParams.set('page', String(page));
+        // ------------------------------------------------
+        // Normal mode:
+        // API page directly controls the visible page.
+        // ------------------------------------------------
 
-        if (search && search.trim()) {
-          url.searchParams.set('search', search.trim());
-        }
+        if (!remoteOnly) {
+          const result = await fetchApiPage(
+            page,
+            search,
+            signal
+          );
 
-        const res = await fetch(url.toString(), { signal });
+          if (
+            signal.aborted ||
+            requestId !== requestIdRef.current
+          ) {
+            return;
+          }
 
-        // Guard against mocked fetches that don't auto-abort when signal aborts
-        if (signal?.aborted) return;
+          setTotalPages(result.lastPage);
+          setJobs(result.jobs);
 
-        if (!res.ok) {
-          throw new Error(`Server returned HTTP ${res.status}`);
-        }
+          setStatus(
+            result.jobs.length > 0 ? 'success' : 'empty'
+          );
 
-        const responseData = await res.json();
-
-        // Guard against late promise resolutions when signal was aborted during json parsing
-        if (signal?.aborted) return;
-
-        const rawList = Array.isArray(responseData.data) ? responseData.data : [];
-
-        // Map & sanitize job objects
-        let mappedList = rawList.map(mapJobData).filter(Boolean);
-
-        // Apply client-side remote filter if enabled
-        if (remoteFilter) {
-          mappedList = mappedList.filter((job) => job.remote);
-        }
-
-        const pages =
-          responseData.meta?.last_page ||
-          responseData.meta?.total_pages ||
-          1;
-
-        setTotalPages(pages);
-
-        if (mappedList.length === 0) {
-          setJobs([]);
-          setStatus('empty');
-        } else {
-          setJobs(mappedList);
-          setStatus('success');
-        }
-      } catch (err) {
-        if (err.name === 'AbortError' || signal?.aborted) {
-          // Ignore cancellation aborts
           return;
         }
-        setErrorMsg(err.message || 'Failed to fetch jobs.');
+
+        // ------------------------------------------------
+        // Remote-only mode:
+        //
+        // Arbeitnow does not provide a reliable remote-only
+        // page filter. Therefore we fetch all API pages,
+        // filter the complete result, and THEN paginate.
+        //
+        // This prevents:
+        //
+        // API page 1 -> 2 remote jobs
+        // API page 2 -> 1 remote job
+        //
+        // from incorrectly treating each API page as a
+        // complete remote page.
+        // ------------------------------------------------
+
+        const cacheKey = search;
+
+        if (
+          remoteJobsCacheRef.current.key !== cacheKey ||
+          remoteJobsCacheRef.current.jobs.length === 0
+        ) {
+          const firstPage = await fetchApiPage(
+            1,
+            search,
+            signal
+          );
+
+          if (
+            signal.aborted ||
+            requestId !== requestIdRef.current
+          ) {
+            return;
+          }
+
+          const allJobs = [...firstPage.jobs];
+
+          const apiPageSize = Math.max(
+            firstPage.jobs.length,
+            1
+          );
+
+          // Fetch remaining API pages.
+          for (
+            let apiPage = 2;
+            apiPage <= firstPage.lastPage;
+            apiPage += 1
+          ) {
+            const nextPage = await fetchApiPage(
+              apiPage,
+              search,
+              signal
+            );
+
+            if (
+              signal.aborted ||
+              requestId !== requestIdRef.current
+            ) {
+              return;
+            }
+
+            allJobs.push(...nextPage.jobs);
+          }
+
+          const remoteJobs = allJobs.filter(
+            (job) => job.remote === true
+          );
+
+          remoteJobsCacheRef.current = {
+            key: cacheKey,
+            jobs: remoteJobs,
+            pageSize: apiPageSize,
+          };
+        }
+
+        if (
+          signal.aborted ||
+          requestId !== requestIdRef.current
+        ) {
+          return;
+        }
+
+        const {
+          jobs: remoteJobs,
+          pageSize,
+        } = remoteJobsCacheRef.current;
+
+        const filteredTotalPages = Math.max(
+          1,
+          Math.ceil(remoteJobs.length / pageSize)
+        );
+
+        const validPage = Math.min(
+          Math.max(page, 1),
+          filteredTotalPages
+        );
+
+        // If a filter change made the current page invalid,
+        // move back to the last valid page.
+        if (validPage !== page) {
+          setCurrentPage(validPage);
+          return;
+        }
+
+        const startIndex =
+          (validPage - 1) * pageSize;
+
+        const visibleJobs = remoteJobs.slice(
+          startIndex,
+          startIndex + pageSize
+        );
+
+        setTotalPages(filteredTotalPages);
+        setJobs(visibleJobs);
+
+        setStatus(
+          visibleJobs.length > 0 ? 'success' : 'empty'
+        );
+      } catch (error) {
+        if (
+          error?.name === 'AbortError' ||
+          signal.aborted ||
+          requestId !== requestIdRef.current
+        ) {
+          return;
+        }
+
+        setJobs([]);
+        setTotalPages(1);
+        setErrorMsg(
+          error?.message || 'Failed to fetch jobs.'
+        );
         setStatus('error');
       }
     },
-    []
+    [fetchApiPage]
   );
 
-  // 4. Trigger fetch on dependency changes
+  // --------------------------------------------------
+  // Reset remote cache when search changes
+  // --------------------------------------------------
+
   useEffect(() => {
-    // Abort previous pending request
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
+    remoteJobsCacheRef.current = {
+      key: '',
+      jobs: [],
+      pageSize: 1,
+    };
+  }, [debouncedSearch]);
 
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
+  // --------------------------------------------------
+  // Request whenever page/search/filter changes
+  // --------------------------------------------------
 
-    loadJobs(currentPage, debouncedSearch, isRemoteOnly, controller.signal);
+  useEffect(() => {
+    loadJobs(
+      currentPage,
+      debouncedSearch,
+      isRemoteOnly
+    );
 
     return () => {
-      controller.abort();
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
     };
-  }, [currentPage, debouncedSearch, isRemoteOnly, loadJobs]);
+  }, [
+    currentPage,
+    debouncedSearch,
+    isRemoteOnly,
+    loadJobs,
+  ]);
 
-  // 5. Retry Handler
+  // --------------------------------------------------
+  // Retry
+  // --------------------------------------------------
+
   const retry = useCallback(() => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-
-    loadJobs(currentPage, debouncedSearch, isRemoteOnly, controller.signal);
-  }, [currentPage, debouncedSearch, isRemoteOnly, loadJobs]);
+    loadJobs(
+      currentPage,
+      debouncedSearch,
+      isRemoteOnly
+    );
+  }, [
+    currentPage,
+    debouncedSearch,
+    isRemoteOnly,
+    loadJobs,
+  ]);
 
   return {
     jobs,
@@ -170,8 +359,10 @@ export function useJobBoard() {
     totalPages,
     status,
     errorMsg,
+
     handleSearchChange,
     handleRemoteToggle,
+
     setCurrentPage,
     retry,
   };

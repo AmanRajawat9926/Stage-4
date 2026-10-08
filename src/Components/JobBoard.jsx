@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useJobBoard } from '../Hooks/useJobBoard';
+import JobCard from './JobCard';
 import JobDetailModal from './JobDetailModal';
 
 export default function JobBoard({ onTrackJob }) {
@@ -19,13 +20,14 @@ export default function JobBoard({ onTrackJob }) {
 
   const [selectedJob, setSelectedJob] = useState(null);
 
-  const handleFormSubmit = (e) => {
-    e.preventDefault();
+  const handleFormSubmit = (event) => {
+    event.preventDefault();
   };
 
-  const handleFormKeyDown = (e) => {
-    if (e.key === 'Escape') {
-      e.stopPropagation();
+  const handleFormKeyDown = (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
       handleSearchChange('');
     }
   };
@@ -34,7 +36,8 @@ export default function JobBoard({ onTrackJob }) {
     if (typeof onTrackJob === 'function') {
       onTrackJob({
         ...job,
-        company_name: job.company_name || 'Unknown Company',
+        company_name:
+          job.company_name || 'Unknown Company',
         title: job.title || 'Untitled Role',
         round: 'Applied',
       });
@@ -42,7 +45,8 @@ export default function JobBoard({ onTrackJob }) {
   };
 
   const displayError =
-    errorMsg && errorMsg.toLowerCase().includes('network')
+    errorMsg &&
+    errorMsg.toLowerCase().includes('network')
       ? 'Failed to fetch jobs'
       : errorMsg || 'Failed to fetch jobs';
 
@@ -50,7 +54,6 @@ export default function JobBoard({ onTrackJob }) {
     <div className="job-board-container">
       <h2>External Job Board</h2>
 
-      {/* Search & Filter Controls */}
       <form
         className="job-board-filters"
         onSubmit={handleFormSubmit}
@@ -61,9 +64,12 @@ export default function JobBoard({ onTrackJob }) {
             type="search"
             aria-label="Search jobs"
             placeholder="Search jobs by title, company, or tech..."
-            value={typeof searchQuery === 'string' ? searchQuery : ''}
-            onChange={(e) => handleSearchChange(e.target.value)}
+            value={searchQuery}
+            onChange={(event) =>
+              handleSearchChange(event.target.value)
+            }
           />
+
           {searchQuery && (
             <button
               type="button"
@@ -80,14 +86,16 @@ export default function JobBoard({ onTrackJob }) {
           <input
             type="checkbox"
             checked={isRemoteOnly}
-            onChange={(e) => handleRemoteToggle(e.target.checked)}
+            onChange={(event) =>
+              handleRemoteToggle(event.target.checked)
+            }
             aria-label="Show remote jobs only"
           />
+
           Remote Only
         </label>
       </form>
 
-      {/* Loading Skeleton View */}
       {status === 'loading' && (
         <div
           className="jobs-skeleton-grid"
@@ -95,7 +103,10 @@ export default function JobBoard({ onTrackJob }) {
           role="status"
         >
           {[...Array(6)].map((_, index) => (
-            <div key={`skeleton-${index}`} className="skeleton-card">
+            <div
+              key={`skeleton-${index}`}
+              className="skeleton-card"
+            >
               <div className="skeleton-line title" />
               <div className="skeleton-line company" />
               <div className="skeleton-line location" />
@@ -104,110 +115,91 @@ export default function JobBoard({ onTrackJob }) {
         </div>
       )}
 
-      {/* Error State View */}
       {status === 'error' && (
-        <div className="state-card error-state" role="alert">
+        <div
+          className="state-card error-state"
+          role="alert"
+        >
           <h3>Unable to load jobs</h3>
+
           <p>{displayError}</p>
-          <button type="button" className="btn-retry" onClick={retry}>
+
+          <button
+            type="button"
+            className="btn-retry"
+            onClick={retry}
+          >
             Retry
           </button>
         </div>
       )}
 
-      {/* Empty State View */}
       {status === 'empty' && (
         <div className="state-card empty-state">
           <h3>No jobs found</h3>
+
           <p>
             {isRemoteOnly
-              ? 'No remote jobs matching your criteria were found on this page. Try changing filters or navigating pages.'
-              : 'Try adjusting your search query or clear filters.'}
+              ? 'No remote jobs matched your search. Try another search or turn off Remote Only.'
+              : 'Try adjusting your search query.'}
           </p>
         </div>
       )}
 
-      {/* Successful Job List View */}
       {status === 'success' && (
         <>
           <div className="jobs-grid">
             {jobs.map((job) => (
-              <div key={job.id} className="job-card">
-                <div className="job-card-header">
-                  <span className="job-company">{job.company_name}</span>
-                  <h3 className="job-title">{job.title}</h3>
-                  <p className="job-location">
-                    {job.location || 'Location not specified'}
-                  </p>
-
-                  {job.remote && (
-                    <span className="remote-badge">
-                      <span className="pulse-dot" />
-                      Remote
-                    </span>
-                  )}
-
-                  <div className="job-tags">
-                    {Array.isArray(job.tags) &&
-                      job.tags.slice(0, 4).map((tag) => (
-                        <span key={tag} className="tag-chip">
-                          {tag}
-                        </span>
-                      ))}
-                  </div>
-                </div>
-
-                <div className="job-card-footer">
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => setSelectedJob(job)}
-                  >
-                    View Details
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-track"
-                    onClick={() => handleTrack(job)}
-                  >
-                    + Track Job
-                  </button>
-                </div>
-              </div>
+              <JobCard
+                key={job.id}
+                job={job}
+                onTrackJob={handleTrack}
+                onViewDetails={setSelectedJob}
+              />
             ))}
           </div>
 
-          {/* Pagination Navigation */}
-          {totalPages > 1 && (
-            <div
-              className="pagination-bar"
-              aria-label="Job pagination navigation"
+          {/* Always show pagination information */}
+          <div
+            className="pagination-bar"
+            aria-label="Job pagination navigation"
+          >
+            <button
+              type="button"
+              className="btn-page"
+              disabled={currentPage <= 1}
+              onClick={() =>
+                setCurrentPage((page) =>
+                  Math.max(1, page - 1)
+                )
+              }
             >
-              <button
-                type="button"
-                className="btn-page"
-                disabled={currentPage <= 1}
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              >
-                Previous
-              </button>
-              <span aria-live="polite">
-                Page {currentPage} of {totalPages}
-              </span>
-              <button
-                type="button"
-                className="btn-page"
-                disabled={currentPage >= totalPages}
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              >
-                Next
-              </button>
-            </div>
-          )}
+              Previous
+            </button>
+
+            <span aria-live="polite">
+              Page {currentPage} of {totalPages}
+            </span>
+
+            <button
+              type="button"
+              className="btn-page"
+              disabled={currentPage >= totalPages}
+              onClick={() =>
+                setCurrentPage((page) =>
+                  Math.min(
+                    totalPages,
+                    page + 1
+                  )
+                )
+              }
+            >
+              Next
+            </button>
+          </div>
         </>
       )}
 
-      {/* Accessible Job Details Modal */}
       {selectedJob && (
         <JobDetailModal
           job={selectedJob}

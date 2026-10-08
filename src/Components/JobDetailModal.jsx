@@ -1,165 +1,174 @@
 import React, { useEffect, useRef } from 'react';
+import {
+  mapJobData,
+  formatJobUrl,
+} from '../Utils/sanitize';
 
-/**
- * Ensures job URL has an explicit http/https protocol prefix.
- */
-function formatJobUrl(url) {
-  if (!url) return '';
-  const trimmed = String(url).trim();
-  if (!trimmed) return '';
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  return `https://${trimmed}`;
-}
+export default function JobDetailModal({
+  job,
+  onClose,
+  onTrackJob,
+}) {
+  const dialogRef = useRef(null);
 
-export default function JobDetailModal({ job, onClose, onTrackJob }) {
-  const modalRef = useRef(null);
-  const previousFocusRef = useRef(null);
+  const safeJob = mapJobData(job);
 
   useEffect(() => {
-    if (!job) return;
-
-    // Store currently focused element to restore focus on unmount
-    previousFocusRef.current = document.activeElement;
-
-    // Lock body scrolling while modal is open
-    const originalStyle = window.getComputedStyle(document.body).overflow;
-    document.body.style.overflow = 'hidden';
-
-    // Focus modal container on mount
-    if (modalRef.current) {
-      modalRef.current.focus();
-    }
-
-    // Keyboard navigation handlers (Escape to close, Tab to trap focus)
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
         onClose?.();
-        return;
-      }
-
-      if (e.key === 'Tab' && modalRef.current) {
-        const focusableElements = modalRef.current.querySelectorAll(
-          'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
-        );
-        
-        if (focusableElements.length === 0) return;
-
-        const firstElement = focusableElements[0];
-        const lastElement = focusableElements[focusableElements.length - 1];
-
-        if (e.shiftKey) {
-          if (document.activeElement === firstElement) {
-            e.preventDefault();
-            lastElement.focus();
-          }
-        } else {
-          if (document.activeElement === lastElement) {
-            e.preventDefault();
-            firstElement.focus();
-          }
-        }
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener(
+      'keydown',
+      handleEscape
+    );
 
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = originalStyle;
-
-      // Restore focus on close
-      if (previousFocusRef.current && typeof previousFocusRef.current.focus === 'function') {
-        previousFocusRef.current.focus();
-      }
+      window.removeEventListener(
+        'keydown',
+        handleEscape
+      );
     };
-  }, [job, onClose]);
+  }, [onClose]);
 
-  if (!job) return null;
+  useEffect(() => {
+    dialogRef.current?.focus();
+  }, []);
 
-  // Property fallbacks for backend/API variance
-  const safeTitle = job.title || 'Untitled Role';
-  const safeCompany = job.company_name || job.company || 'Unknown Company';
-  const safeLocation = job.location || 'Remote / Unspecified';
-  const safeDescription = job.description || 'No detailed description available.';
-  const safeTags = Array.isArray(job.tags) ? job.tags.filter(Boolean) : [];
-  const formattedUrl = formatJobUrl(job.url || job.jobLink);
+  if (!safeJob) {
+    return null;
+  }
+
+  const {
+    title,
+    company_name,
+    location,
+    tags,
+    remote,
+    description,
+  } = safeJob;
+
+  const originalUrl = formatJobUrl(safeJob.url);
 
   return (
     <div
-      className="modal-overlay"
-      onClick={onClose}
+      className="modal-backdrop"
       role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose?.();
+        }
+      }}
     >
       <div
-        className="modal-container"
+        ref={dialogRef}
+        className="job-detail-modal"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="modal-title"
-        tabIndex={-1}
-        ref={modalRef}
-        onClick={(e) => e.stopPropagation()}
+        aria-labelledby="job-detail-title"
+        tabIndex="-1"
       >
-        <header className="modal-header">
-          <h2 id="modal-title">{safeTitle}</h2>
+        <div className="modal-header">
+          <div>
+            <span className="job-company">
+              {company_name}
+            </span>
+
+            <h2 id="job-detail-title">
+              {title}
+            </h2>
+          </div>
+
           <button
             type="button"
-            className="close-btn"
+            className="modal-close-button"
             onClick={onClose}
-            aria-label="Close modal"
+            aria-label="Close job details"
           >
-            &times;
+            ×
           </button>
-        </header>
-
-        <div className="modal-body">
-          <p className="company-info">
-            <strong>{safeCompany}</strong> &bull; {safeLocation}
-            {job.remote && <span className="badge remote-badge">Remote</span>}
-          </p>
-
-          {safeTags.length > 0 && (
-            <div className="tags-container" aria-label="Job tags">
-              {safeTags.map((tag, idx) => (
-                <span key={`${job.id || 'job'}-tag-${idx}`} className="tag">
-                  {tag}
-                </span>
-              ))}
-            </div>
-          )}
-
-          <hr />
-
-          <div className="job-description-text">
-            <h3>Description</h3>
-            <div style={{ whiteSpace: 'pre-line' }}>{safeDescription}</div>
-          </div>
         </div>
 
-        <footer className="modal-footer">
-          {formattedUrl && (
+        <div className="job-detail-meta">
+          <span>{location}</span>
+
+          {remote && (
+            <span className="remote-badge">
+              Remote
+            </span>
+          )}
+        </div>
+
+        {tags.length > 0 && (
+          <div
+            className="job-tags"
+            aria-label="Job tags"
+          >
+            {tags.slice(0, 5).map((tag, index) => (
+              <span
+                key={`${safeJob.id}-detail-tag-${index}`}
+                className="tag-chip"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
+
+        <section
+          className="job-description"
+          aria-labelledby="job-description-heading"
+        >
+          <h3 id="job-description-heading">
+            Job Description
+          </h3>
+
+          {description ? (
+            <p>{description}</p>
+          ) : (
+            <p>
+              No description is available for this
+              position.
+            </p>
+          )}
+        </section>
+
+        <div className="modal-actions">
+          {originalUrl && (
             <a
-              href={formattedUrl}
+              href={originalUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="secondary-button"
+              className="btn-link"
             >
-              View Original Posting &rarr;
+              Original Posting ↗
             </a>
           )}
+
           {onTrackJob && (
             <button
               type="button"
-              className="primary-button"
+              className="btn-track"
               onClick={() => {
-                onTrackJob(job);
+                onTrackJob(safeJob);
                 onClose?.();
               }}
             >
-              Track This Job
+              + Track this job
             </button>
           )}
-        </footer>
+
+          <button
+            type="button"
+            className="cancel-button"
+            onClick={onClose}
+          >
+            Close (Esc)
+          </button>
+        </div>
       </div>
     </div>
   );
