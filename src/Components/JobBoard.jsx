@@ -151,7 +151,7 @@ export default function JobBoard({ onTrackJob }) {
           <div className="jobs-grid">
             {jobs.map((job) => (
               <JobCard
-                key={job.id}
+                key={job.id || job.slug}
                 job={job}
                 onTrackJob={handleTrack}
                 onViewDetails={setSelectedJob}

@@ -1,34 +1,31 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+} from 'react';
+
 import { mapJobData } from '../Utils/sanitize';
 
-const API_BASE_URL = 'https://www.arbeitnow.com/api/job-board-api';
+const API_BASE_URL =
+  'https://www.arbeitnow.com/api/job-board-api';
+
+const JOBS_PER_PAGE = 10;
 
 export function useJobBoard() {
   const [jobs, setJobs] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [isRemoteOnly, setIsRemoteOnly] = useState(false);
-
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-
   const [status, setStatus] = useState('loading');
   const [errorMsg, setErrorMsg] = useState(null);
 
   const abortControllerRef = useRef(null);
   const requestIdRef = useRef(0);
 
-  // Cache the complete filtered result for remote mode.
-  const remoteJobsCacheRef = useRef({
-    key: '',
-    jobs: [],
-    pageSize: 1,
-  });
-
-  // --------------------------------------------------
-  // Debounced search
-  // --------------------------------------------------
-
+  // Debounce search input by 300 ms.
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(searchQuery.trim());
@@ -36,10 +33,6 @@ export function useJobBoard() {
 
     return () => clearTimeout(timer);
   }, [searchQuery]);
-
-  // --------------------------------------------------
-  // Search
-  // --------------------------------------------------
 
   const handleSearchChange = useCallback((valueOrEvent) => {
     const value =
@@ -53,10 +46,6 @@ export function useJobBoard() {
     setCurrentPage(1);
   }, []);
 
-  // --------------------------------------------------
-  // Remote filter
-  // --------------------------------------------------
-
   const handleRemoteToggle = useCallback((value) => {
     setIsRemoteOnly((previous) =>
       typeof value === 'boolean' ? value : !previous
@@ -65,225 +54,175 @@ export function useJobBoard() {
     setCurrentPage(1);
   }, []);
 
-  // --------------------------------------------------
-  // Fetch one API page
-  // --------------------------------------------------
+  // Fetch and sanitize a single API page.
+  const fetchApiPage = useCallback(
+    async (page, search, signal) => {
+      const url = new URL(API_BASE_URL);
 
-  const fetchApiPage = useCallback(async (page, search, signal) => {
-    const url = new URL(API_BASE_URL);
+      url.searchParams.set('page', String(page));
 
-    url.searchParams.set('page', String(page));
+      if (search) {
+        url.searchParams.set('search', search);
+      }
 
-    if (search) {
-      url.searchParams.set('search', search);
-    }
+      const response = await fetch(url.toString(), {
+        signal,
+      });
 
-    const response = await fetch(url.toString(), {
-      signal,
-    });
+      if (!response.ok) {
+        throw new Error(
+          `Server returned HTTP ${response.status}`
+        );
+      }
 
-    if (!response.ok) {
-      throw new Error(`Server returned HTTP ${response.status}`);
-    }
+      const payload = await response.json();
 
-    const responseData = await response.json();
+      if (signal.aborted) {
+        throw new DOMException(
+          'Request aborted',
+          'AbortError'
+        );
+      }
 
-    if (signal.aborted) {
-      throw new DOMException('Request aborted', 'AbortError');
-    }
+      const rawJobs = Array.isArray(payload.data)
+        ? payload.data
+        : [];
 
-    const rawJobs = Array.isArray(responseData.data)
-      ? responseData.data
-      : [];
+      const mappedJobs = rawJobs
+        .map(mapJobData)
+        .filter(Boolean);
 
-    const mappedJobs = rawJobs
-      .map(mapJobData)
-      .filter(Boolean);
+      const lastPage = Math.max(
+        1,
+        Number(payload.meta?.last_page) ||
+          Number(payload.meta?.total_pages) ||
+          1
+      );
 
-    const lastPage =
-      Number(responseData.meta?.last_page) ||
-      Number(responseData.meta?.total_pages) ||
-      1;
+      return {
+        jobs: mappedJobs,
+        lastPage,
+      };
+    },
+    []
+  );
 
-    return {
-      jobs: mappedJobs,
-      lastPage,
-    };
-  }, []);
+  // Fetch every API page before applying local filters.
+  const fetchAllApiPages = useCallback(
+    async (search, signal, isCurrentRequest) => {
+      const firstPage = await fetchApiPage(
+        1,
+        search,
+        signal
+      );
 
-  // --------------------------------------------------
-  // Main request
-  // --------------------------------------------------
+      if (!isCurrentRequest()) {
+        return [];
+      }
+
+      const allJobs = [...firstPage.jobs];
+      const lastPage = firstPage.lastPage;
+
+      // Fetch remaining API pages.
+      for (let page = 2; page <= lastPage; page += 1) {
+        if (!isCurrentRequest()) {
+          return [];
+        }
+
+        const result = await fetchApiPage(
+          page,
+          search,
+          signal
+        );
+
+        if (!isCurrentRequest()) {
+          return [];
+        }
+
+        allJobs.push(...result.jobs);
+      }
+
+      return allJobs;
+    },
+    [fetchApiPage]
+  );
 
   const loadJobs = useCallback(
-    async (page, search, remoteOnly) => {
+    async (_page, search, remoteOnly) => {
+      // Invalidate older requests.
       const requestId = ++requestIdRef.current;
 
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
+      abortControllerRef.current?.abort();
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
       const { signal } = controller;
 
+      const isCurrentRequest = () =>
+        !signal.aborted &&
+        requestId === requestIdRef.current;
+
       setStatus('loading');
       setErrorMsg(null);
 
       try {
-        // ------------------------------------------------
-        // Normal mode:
-        // API page directly controls the visible page.
-        // ------------------------------------------------
+        let filteredJobs = [];
+        let calculatedTotalPages = 1;
 
-        if (!remoteOnly) {
-          const result = await fetchApiPage(
-            page,
+        if (remoteOnly) {
+          // Fetch all API pages to filter remote jobs across the whole dataset.
+          const allJobs = await fetchAllApiPages(
             search,
-            signal
+            signal,
+            isCurrentRequest
           );
 
-          if (
-            signal.aborted ||
-            requestId !== requestIdRef.current
-          ) {
-            return;
-          }
+          if (!isCurrentRequest()) return;
 
-          setTotalPages(result.lastPage);
-          setJobs(result.jobs);
-
-          setStatus(
-            result.jobs.length > 0 ? 'success' : 'empty'
-          );
-
-          return;
-        }
-
-        // ------------------------------------------------
-        // Remote-only mode:
-        //
-        // Arbeitnow does not provide a reliable remote-only
-        // page filter. Therefore we fetch all API pages,
-        // filter the complete result, and THEN paginate.
-        //
-        // This prevents:
-        //
-        // API page 1 -> 2 remote jobs
-        // API page 2 -> 1 remote job
-        //
-        // from incorrectly treating each API page as a
-        // complete remote page.
-        // ------------------------------------------------
-
-        const cacheKey = search;
-
-        if (
-          remoteJobsCacheRef.current.key !== cacheKey ||
-          remoteJobsCacheRef.current.jobs.length === 0
-        ) {
-          const firstPage = await fetchApiPage(
+          filteredJobs = allJobs.filter((job) => job.remote === true);
+          calculatedTotalPages = Math.max(
             1,
+            Math.ceil(filteredJobs.length / JOBS_PER_PAGE)
+          );
+        } else {
+          // Single page fetch when Remote Only filter is disabled.
+          const singlePage = await fetchApiPage(
+            _page,
             search,
             signal
           );
 
-          if (
-            signal.aborted ||
-            requestId !== requestIdRef.current
-          ) {
-            return;
-          }
+          if (!isCurrentRequest()) return;
 
-          const allJobs = [...firstPage.jobs];
-
-          const apiPageSize = Math.max(
-            firstPage.jobs.length,
-            1
-          );
-
-          // Fetch remaining API pages.
-          for (
-            let apiPage = 2;
-            apiPage <= firstPage.lastPage;
-            apiPage += 1
-          ) {
-            const nextPage = await fetchApiPage(
-              apiPage,
-              search,
-              signal
-            );
-
-            if (
-              signal.aborted ||
-              requestId !== requestIdRef.current
-            ) {
-              return;
-            }
-
-            allJobs.push(...nextPage.jobs);
-          }
-
-          const remoteJobs = allJobs.filter(
-            (job) => job.remote === true
-          );
-
-          remoteJobsCacheRef.current = {
-            key: cacheKey,
-            jobs: remoteJobs,
-            pageSize: apiPageSize,
-          };
+          filteredJobs = singlePage.jobs;
+          calculatedTotalPages = singlePage.lastPage;
         }
 
-        if (
-          signal.aborted ||
-          requestId !== requestIdRef.current
-        ) {
-          return;
-        }
-
-        const {
-          jobs: remoteJobs,
-          pageSize,
-        } = remoteJobsCacheRef.current;
-
-        const filteredTotalPages = Math.max(
-          1,
-          Math.ceil(remoteJobs.length / pageSize)
+        const safeCurrentPage = Math.min(
+          Math.max(1, _page),
+          calculatedTotalPages
         );
 
-        const validPage = Math.min(
-          Math.max(page, 1),
-          filteredTotalPages
-        );
+        const paginatedJobs = remoteOnly
+          ? filteredJobs.slice(
+              (safeCurrentPage - 1) * JOBS_PER_PAGE,
+              safeCurrentPage * JOBS_PER_PAGE
+            )
+          : filteredJobs;
 
-        // If a filter change made the current page invalid,
-        // move back to the last valid page.
-        if (validPage !== page) {
-          setCurrentPage(validPage);
-          return;
-        }
-
-        const startIndex =
-          (validPage - 1) * pageSize;
-
-        const visibleJobs = remoteJobs.slice(
-          startIndex,
-          startIndex + pageSize
-        );
-
-        setTotalPages(filteredTotalPages);
-        setJobs(visibleJobs);
+        setJobs(paginatedJobs);
+        setTotalPages(calculatedTotalPages);
 
         setStatus(
-          visibleJobs.length > 0 ? 'success' : 'empty'
+          paginatedJobs.length > 0
+            ? 'success'
+            : 'empty'
         );
       } catch (error) {
         if (
           error?.name === 'AbortError' ||
-          signal.aborted ||
-          requestId !== requestIdRef.current
+          !isCurrentRequest()
         ) {
           return;
         }
@@ -296,24 +235,8 @@ export function useJobBoard() {
         setStatus('error');
       }
     },
-    [fetchApiPage]
+    [fetchAllApiPages, fetchApiPage]
   );
-
-  // --------------------------------------------------
-  // Reset remote cache when search changes
-  // --------------------------------------------------
-
-  useEffect(() => {
-    remoteJobsCacheRef.current = {
-      key: '',
-      jobs: [],
-      pageSize: 1,
-    };
-  }, [debouncedSearch]);
-
-  // --------------------------------------------------
-  // Request whenever page/search/filter changes
-  // --------------------------------------------------
 
   useEffect(() => {
     loadJobs(
@@ -323,9 +246,7 @@ export function useJobBoard() {
     );
 
     return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
+      abortControllerRef.current?.abort();
     };
   }, [
     currentPage,
@@ -333,10 +254,6 @@ export function useJobBoard() {
     isRemoteOnly,
     loadJobs,
   ]);
-
-  // --------------------------------------------------
-  // Retry
-  // --------------------------------------------------
 
   const retry = useCallback(() => {
     loadJobs(
@@ -359,10 +276,8 @@ export function useJobBoard() {
     totalPages,
     status,
     errorMsg,
-
     handleSearchChange,
     handleRemoteToggle,
-
     setCurrentPage,
     retry,
   };

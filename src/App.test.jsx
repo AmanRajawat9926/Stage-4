@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import App from './App';
 import { sanitizeText } from './Components/JobCard';
@@ -13,7 +13,7 @@ describe('Job Application Tracker - Core Requirements', () => {
     expect(cleaned).toContain('Frontend Developer');
   });
 
-  it('switches navigation between Tracker and Job Board views', () => {
+  it('switches navigation between Tracker and Job Board views', async () => {
     render(<App />);
 
     // Queries role="tab" and matches "External Job Board"
@@ -21,6 +21,11 @@ describe('Job Application Tracker - Core Requirements', () => {
     fireEvent.click(jobBoardTab);
 
     expect(jobBoardTab).toHaveClass('active');
+
+    // Wait for asynchronous state/fetch updates inside JobBoard to settle
+    await waitFor(() => {
+      expect(jobBoardTab).toHaveClass('active');
+    });
   });
 
   it('tracks a job into the application list at Applied status', async () => {
@@ -33,6 +38,8 @@ describe('Job Application Tracker - Core Requirements', () => {
     const trackerTab = screen.getByRole('tab', { name: /My Applications/i });
     fireEvent.click(trackerTab);
 
-    expect(screen.getByText(/CareerSuite Tracker/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(/CareerSuite Tracker/i)).toBeInTheDocument();
+    });
   });
 });

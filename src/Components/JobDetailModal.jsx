@@ -1,4 +1,6 @@
+
 import React, { useEffect, useRef } from 'react';
+
 import {
   mapJobData,
   formatJobUrl,
@@ -10,39 +12,81 @@ export default function JobDetailModal({
   onTrackJob,
 }) {
   const dialogRef = useRef(null);
+  const previousFocusRef = useRef(null);
 
   const safeJob = mapJobData(job);
 
   useEffect(() => {
-    const handleEscape = (event) => {
+    const dialog = dialogRef.current;
+
+    if (!dialog) return undefined;
+
+    previousFocusRef.current = document.activeElement;
+
+    const getFocusableElements = () =>
+      Array.from(
+        dialog.querySelectorAll(
+          'a[href], button:not([disabled]), ' +
+          'input:not([disabled]), select:not([disabled]), ' +
+          'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((element) => element.offsetParent !== null);
+
+    dialog.focus();
+
+    const handleKeyDown = (event) => {
       if (event.key === 'Escape') {
         event.preventDefault();
         onClose?.();
+        return;
+      }
+
+      if (event.key !== 'Tab') return;
+
+      const elements = getFocusableElements();
+
+      if (elements.length === 0) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+
+      const first = elements[0];
+      const last = elements[elements.length - 1];
+
+      if (
+        event.shiftKey &&
+        (document.activeElement === first ||
+          document.activeElement === dialog)
+      ) {
+        event.preventDefault();
+        last.focus();
+      } else if (
+        !event.shiftKey &&
+        document.activeElement === last
+      ) {
+        event.preventDefault();
+        first.focus();
       }
     };
 
-    window.addEventListener(
-      'keydown',
-      handleEscape
-    );
+    dialog.addEventListener('keydown', handleKeyDown);
 
     return () => {
-      window.removeEventListener(
-        'keydown',
-        handleEscape
-      );
+      dialog.removeEventListener('keydown', handleKeyDown);
+
+      const previous = previousFocusRef.current;
+
+      if (previous && typeof previous.focus === 'function') {
+        previous.focus();
+      }
     };
   }, [onClose]);
 
-  useEffect(() => {
-    dialogRef.current?.focus();
-  }, []);
-
-  if (!safeJob) {
-    return null;
-  }
+  if (!safeJob) return null;
 
   const {
+    id,
     title,
     company_name,
     location,
@@ -53,15 +97,17 @@ export default function JobDetailModal({
 
   const originalUrl = formatJobUrl(safeJob.url);
 
+  const handleBackdropMouseDown = (event) => {
+    if (event.target === event.currentTarget) {
+      onClose?.();
+    }
+  };
+
   return (
     <div
       className="modal-backdrop"
       role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) {
-          onClose?.();
-        }
-      }}
+      onMouseDown={handleBackdropMouseDown}
     >
       <div
         ref={dialogRef}
@@ -69,7 +115,8 @@ export default function JobDetailModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="job-detail-title"
-        tabIndex="-1"
+        aria-describedby="job-description-heading"
+        tabIndex={-1}
       >
         <div className="modal-header">
           <div>
@@ -77,9 +124,7 @@ export default function JobDetailModal({
               {company_name}
             </span>
 
-            <h2 id="job-detail-title">
-              {title}
-            </h2>
+            <h2 id="job-detail-title">{title}</h2>
           </div>
 
           <button
@@ -96,20 +141,15 @@ export default function JobDetailModal({
           <span>{location}</span>
 
           {remote && (
-            <span className="remote-badge">
-              Remote
-            </span>
+            <span className="remote-badge">Remote</span>
           )}
         </div>
 
         {tags.length > 0 && (
-          <div
-            className="job-tags"
-            aria-label="Job tags"
-          >
+          <div className="job-tags" aria-label="Job tags">
             {tags.slice(0, 5).map((tag, index) => (
               <span
-                key={`${safeJob.id}-detail-tag-${index}`}
+                key={`${id}-detail-tag-${index}`}
                 className="tag-chip"
               >
                 {tag}
@@ -130,8 +170,7 @@ export default function JobDetailModal({
             <p>{description}</p>
           ) : (
             <p>
-              No description is available for this
-              position.
+              No description is available for this position.
             </p>
           )}
         </section>
@@ -144,20 +183,20 @@ export default function JobDetailModal({
               rel="noopener noreferrer"
               className="btn-link"
             >
-              Original Posting ↗
+              View Original Posting ↗
             </a>
           )}
 
           {onTrackJob && (
             <button
               type="button"
-              className="btn-track"
+              className="primary-button"
               onClick={() => {
                 onTrackJob(safeJob);
                 onClose?.();
               }}
             >
-              + Track this job
+              Track this job
             </button>
           )}
 
@@ -166,7 +205,7 @@ export default function JobDetailModal({
             className="cancel-button"
             onClick={onClose}
           >
-            Close (Esc)
+            Close
           </button>
         </div>
       </div>
