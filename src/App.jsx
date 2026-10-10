@@ -85,7 +85,6 @@ export default function App() {
   const [editingId, setEditingId] = useState(null);
   const [undoAction, setUndoAction] = useState(null);
 
-  // Sync applications to localStorage
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(applications));
@@ -97,7 +96,6 @@ export default function App() {
     }
   }, [applications]);
 
-  // Auto-dismiss undo toast after 5 seconds
   useEffect(() => {
     if (!undoAction) {
       return undefined;

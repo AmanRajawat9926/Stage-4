@@ -159,7 +159,6 @@ export default function JobBoard({ onTrackJob }) {
             ))}
           </div>
 
-          {/* Always show pagination information */}
           <div
             className="pagination-bar"
             aria-label="Job pagination navigation"

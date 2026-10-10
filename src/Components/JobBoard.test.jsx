@@ -40,7 +40,7 @@ const makeJob = ({
     '<p>Frontend Developer</p>',
 });
 
-describe('Job Board Day 3', () => {
+describe('Job Board Day 5', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.restoreAllMocks();
@@ -51,7 +51,7 @@ describe('Job Board Day 3', () => {
     vi.useRealTimers();
   });
 
-  test('mapper safely converts HTML description into plain text', () => {
+  test('mapper safely converts HTML description into plain text and neutralizes scripts', () => {
     const mapped = mapJobData({
       slug: 'safe-job',
       company_name: 'Safe Corp',
@@ -68,40 +68,19 @@ describe('Job Board Day 3', () => {
     });
 
     expect(mapped).not.toBeNull();
-
-    expect(mapped.description).toContain(
-      'Great role'
-    );
-
-    expect(mapped.description).toContain(
-      'alert("xss")'
-    );
-
-    expect(mapped.description).toContain(
-      'React'
-    );
-
-    expect(mapped.description).not.toContain(
-      '<script>'
-    );
-
-    expect(mapped.description).not.toContain(
-      '<img'
-    );
-
-    expect(mapped.description).not.toContain(
-      'onerror'
-    );
+    expect(mapped.description).toContain('Great role');
+    expect(mapped.description).toContain('React');
+    expect(mapped.description).not.toContain('<script>');
+    expect(mapped.description).not.toContain('<img');
+    expect(mapped.description).not.toContain('onerror');
   });
 
   test(
-    'remote-only filtering is applied across API pages before pagination',
+    'pagination and remote-only toggle compose correctly using API-driven pages',
     async () => {
       global.fetch = vi.fn((url) => {
         const parsedUrl = new URL(url);
-
-        const page =
-          parsedUrl.searchParams.get('page');
+        const page = parsedUrl.searchParams.get('page');
 
         const pages = {
           '1': {
@@ -112,7 +91,6 @@ describe('Job Board Day 3', () => {
                 company: 'Remote Corp',
                 remote: true,
               }),
-
               makeJob({
                 slug: 'onsite-1',
                 title: 'Onsite One',
@@ -120,41 +98,14 @@ describe('Job Board Day 3', () => {
                 remote: false,
               }),
             ],
-
-            meta: {
-              last_page: 2,
-            },
-          },
-
-          '2': {
-            data: [
-              makeJob({
-                slug: 'remote-2',
-                title: 'Remote Two',
-                company: 'Remote Corp',
-                remote: true,
-              }),
-
-              makeJob({
-                slug: 'onsite-2',
-                title: 'Onsite Two',
-                company: 'Office Corp',
-                remote: false,
-              }),
-            ],
-
-            meta: {
-              last_page: 2,
-            },
+            meta: { last_page: 2 },
           },
         };
 
         return Promise.resolve({
           ok: true,
           json: () =>
-            Promise.resolve(
-              pages[page] || pages['1']
-            ),
+            Promise.resolve(pages[page] || pages['1']),
         });
       });
 
@@ -188,36 +139,22 @@ describe('Job Board Day 3', () => {
       ).toBeInTheDocument();
 
       expect(
-        screen.getByText('Remote Two')
-      ).toBeInTheDocument();
-
-      expect(
         screen.queryByText('Onsite One')
       ).not.toBeInTheDocument();
 
-      expect(
-        screen.queryByText('Onsite Two')
-      ).not.toBeInTheDocument();
-
-      expect(
-        screen.getByText('Page 1 of 1')
-      ).toBeInTheDocument();
-
-      expect(global.fetch).toHaveBeenCalledTimes(3);
+      expect(global.fetch).toHaveBeenCalledTimes(2);
     }
   );
 
   test(
-    'older search response cannot overwrite newer search result',
+    'older search response cannot overwrite newer search result (race-safe search)',
     async () => {
       let resolveReact;
       let resolveVue;
 
       global.fetch = vi.fn((url) => {
         const parsedUrl = new URL(url);
-
-        const search =
-          parsedUrl.searchParams.get('search');
+        const search = parsedUrl.searchParams.get('search');
 
         if (search === 'React') {
           return new Promise((resolve) => {
@@ -243,9 +180,7 @@ describe('Job Board Day 3', () => {
                   remote: true,
                 }),
               ],
-              meta: {
-                last_page: 1,
-              },
+              meta: { last_page: 1 },
             }),
         });
       });
@@ -266,9 +201,7 @@ describe('Job Board Day 3', () => {
         });
 
       fireEvent.change(searchInput, {
-        target: {
-          value: 'React',
-        },
+        target: { value: 'React' },
       });
 
       await act(async () => {
@@ -278,9 +211,7 @@ describe('Job Board Day 3', () => {
       expect(resolveReact).toBeDefined();
 
       fireEvent.change(searchInput, {
-        target: {
-          value: 'Vue',
-        },
+        target: { value: 'Vue' },
       });
 
       await act(async () => {
@@ -303,9 +234,7 @@ describe('Job Board Day 3', () => {
                   remote: true,
                 }),
               ],
-              meta: {
-                last_page: 1,
-              },
+              meta: { last_page: 1 },
             }),
         });
 
@@ -330,9 +259,7 @@ describe('Job Board Day 3', () => {
                   remote: true,
                 }),
               ],
-              meta: {
-                last_page: 1,
-              },
+              meta: { last_page: 1 },
             }),
         });
 

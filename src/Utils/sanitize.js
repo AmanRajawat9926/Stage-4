@@ -1,8 +1,4 @@
-/**
- * Converts API HTML description into safe plain text.
- *
- * No raw HTML is returned for rendering.
- */
+
 export const sanitizeHtmlToText = (htmlString) => {
   if (
     htmlString === null ||
@@ -59,9 +55,6 @@ export const formatJobUrl = (value) => {
   return `https://${trimmed}`;
 };
 
-/**
- * Safely converts a value to a trimmed string.
- */
 const normalizeString = (
   value,
   fallback = ''
@@ -78,9 +71,6 @@ const normalizeString = (
   return result || fallback;
 };
 
-/**
- * Generates a fallback ID.
- */
 const createFallbackId = () => {
   if (
     typeof crypto !== 'undefined' &&
@@ -94,12 +84,6 @@ const createFallbackId = () => {
     .slice(2)}`;
 };
 
-/**
- * Single production mapper for Arbeitnow jobs.
- *
- * All job data goes through this mapper before
- * reaching JobCard or JobDetailModal.
- */
 export const mapJobData = (rawJob) => {
   if (
     !rawJob ||

@@ -56,7 +56,7 @@ export function useJobBoard() {
 
   // Fetch and sanitize a single API page.
   const fetchApiPage = useCallback(
-    async (page, search, signal) => {
+    async (page, search, remoteOnly, signal) => {
       const url = new URL(API_BASE_URL);
 
       url.searchParams.set('page', String(page));
@@ -88,9 +88,13 @@ export function useJobBoard() {
         ? payload.data
         : [];
 
-      const mappedJobs = rawJobs
+      let mappedJobs = rawJobs
         .map(mapJobData)
         .filter(Boolean);
+
+      if (remoteOnly) {
+        mappedJobs = mappedJobs.filter((job) => job.remote === true);
+      }
 
       const lastPage = Math.max(
         1,
@@ -107,49 +111,8 @@ export function useJobBoard() {
     []
   );
 
-  // Fetch every API page before applying local filters.
-  const fetchAllApiPages = useCallback(
-    async (search, signal, isCurrentRequest) => {
-      const firstPage = await fetchApiPage(
-        1,
-        search,
-        signal
-      );
-
-      if (!isCurrentRequest()) {
-        return [];
-      }
-
-      const allJobs = [...firstPage.jobs];
-      const lastPage = firstPage.lastPage;
-
-      // Fetch remaining API pages.
-      for (let page = 2; page <= lastPage; page += 1) {
-        if (!isCurrentRequest()) {
-          return [];
-        }
-
-        const result = await fetchApiPage(
-          page,
-          search,
-          signal
-        );
-
-        if (!isCurrentRequest()) {
-          return [];
-        }
-
-        allJobs.push(...result.jobs);
-      }
-
-      return allJobs;
-    },
-    [fetchApiPage]
-  );
-
   const loadJobs = useCallback(
     async (_page, search, remoteOnly) => {
-      // Invalidate older requests.
       const requestId = ++requestIdRef.current;
 
       abortControllerRef.current?.abort();
@@ -167,52 +130,26 @@ export function useJobBoard() {
       setErrorMsg(null);
 
       try {
-        let filteredJobs = [];
-        let calculatedTotalPages = 1;
+        const pageResult = await fetchApiPage(
+          _page,
+          search,
+          remoteOnly,
+          signal
+        );
 
-        if (remoteOnly) {
-          // Fetch all API pages to filter remote jobs across the whole dataset.
-          const allJobs = await fetchAllApiPages(
-            search,
-            signal,
-            isCurrentRequest
-          );
+        if (!isCurrentRequest()) return;
 
-          if (!isCurrentRequest()) return;
-
-          filteredJobs = allJobs.filter((job) => job.remote === true);
-          calculatedTotalPages = Math.max(
-            1,
-            Math.ceil(filteredJobs.length / JOBS_PER_PAGE)
-          );
-        } else {
-          // Single page fetch when Remote Only filter is disabled.
-          const singlePage = await fetchApiPage(
-            _page,
-            search,
-            signal
-          );
-
-          if (!isCurrentRequest()) return;
-
-          filteredJobs = singlePage.jobs;
-          calculatedTotalPages = singlePage.lastPage;
-        }
+        const paginatedJobs = pageResult.jobs;
+        const calculatedTotalPages = pageResult.lastPage;
 
         const safeCurrentPage = Math.min(
           Math.max(1, _page),
           calculatedTotalPages
         );
 
-        const paginatedJobs = remoteOnly
-          ? filteredJobs.slice(
-              (safeCurrentPage - 1) * JOBS_PER_PAGE,
-              safeCurrentPage * JOBS_PER_PAGE
-            )
-          : filteredJobs;
-
         setJobs(paginatedJobs);
         setTotalPages(calculatedTotalPages);
+        setCurrentPage(safeCurrentPage);
 
         setStatus(
           paginatedJobs.length > 0
@@ -235,7 +172,7 @@ export function useJobBoard() {
         setStatus('error');
       }
     },
-    [fetchAllApiPages, fetchApiPage]
+    [fetchApiPage]
   );
 
   useEffect(() => {
